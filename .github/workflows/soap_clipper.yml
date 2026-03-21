@@ -6,6 +6,10 @@ on:
       - "output/soap_pending.jsonl"
   workflow_dispatch:
 
+concurrency:
+  group: clipper-queue
+  cancel-in-progress: false
+
 jobs:
   clip:
     runs-on: ubuntu-latest
