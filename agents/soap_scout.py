@@ -83,16 +83,24 @@ def mark_seen(video_id: str):
 # =============================================================================
 
 def process_url(url: str) -> bool:
-    """
-    Write URL to soap_pending.jsonl and push to GitHub.
-    GitHub Actions picks it up and runs soap_clipper.py.
-    No yt-dlp here — that runs in Actions where Node.js is available.
-    """
     log.info(f"Queuing: {url}")
+
+    # Fetch title for commit message
+    title = url  # fallback
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--get-title", "--no-warnings", "--cookies", "cookies.txt", url],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            title = result.stdout.strip()
+    except Exception:
+        pass
 
     SOAP_PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
     job = {
         "url":       url,
+        "title":     title,
         "queued_at": datetime.now(timezone.utc).isoformat(),
     }
     with open(SOAP_PENDING_FILE, "a") as f:
