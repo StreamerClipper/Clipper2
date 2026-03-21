@@ -7,12 +7,13 @@ For each queued URL:
   2. Detects top 3 non-overlapping 30s hotspots
   3. Downloads each segment with yt-dlp --download-sections
   4. Crops to 9:16 with ffmpeg
-  5. Burns Turkish/English subtitles
+  5. Burns Turkish/English subtitles (with timestamp offset)
   6. Posts each clip to Discord for approval
 """
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -106,7 +107,7 @@ def mark_processed(job: dict, lines: list[str]):
 
 
 # =============================================================================
-# Step 1 — Fetch metadata + heatmap (runs in Actions where Node.js exists)
+# Step 1 — Fetch metadata + heatmap
 # =============================================================================
 
 def fetch_video_metadata(url: str) -> dict | None:
@@ -237,6 +238,102 @@ def fetch_subtitles(url: str, stem: Path) -> Path | None:
 
 
 # =============================================================================
+# Step 4b — Shift subtitle timestamps
+# =============================================================================
+
+def vtt_time_to_seconds(t: str) -> float:
+    """Convert VTT timestamp (HH:MM:SS.mmm or MM:SS.mmm) to seconds."""
+    parts = t.strip().split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+    else:
+        h, m, s = 0, parts[0], parts[1]
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def seconds_to_srt_time(s: float) -> str:
+    """Convert seconds to SRT timestamp HH:MM:SS,mmm"""
+    s = max(0.0, s)
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    sec = s % 60
+    ms = int((sec % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{int(sec):02d},{ms:03d}"
+
+
+def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> bool:
+    """
+    Convert VTT to SRT and shift all timestamps back by start_sec.
+    This aligns subtitles with the clipped segment (which starts at 0s).
+    """
+    try:
+        text = vtt_path.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+
+        # Regex to match VTT timestamp lines: 00:05:30.000 --> 00:05:32.500
+        ts_pattern = re.compile(
+            r"(\d{1,2}:\d{2}:\d{2}[.,]\d{3}|\d{2}:\d{2}[.,]\d{3})"
+            r"\s*-->\s*"
+            r"(\d{1,2}:\d{2}:\d{2}[.,]\d{3}|\d{2}:\d{2}[.,]\d{3})"
+        )
+
+        srt_entries = []
+        i = 0
+        counter = 1
+
+        while i < len(lines):
+            line = lines[i].strip()
+            match = ts_pattern.match(line)
+            if match:
+                # Parse timestamps
+                start_ts = match.group(1).replace(",", ".")
+                end_ts   = match.group(2).replace(",", ".")
+                start_s  = vtt_time_to_seconds(start_ts) - start_sec
+                end_s    = vtt_time_to_seconds(end_ts) - start_sec
+
+                # Skip subtitles outside our clip window
+                if end_s < 0 or start_s > CLIP_DURATION:
+                    i += 1
+                    continue
+
+                # Clamp to clip bounds
+                start_s = max(0.0, start_s)
+                end_s   = min(float(CLIP_DURATION), end_s)
+
+                # Collect subtitle text lines
+                i += 1
+                sub_lines = []
+                while i < len(lines) and lines[i].strip() != "" and not ts_pattern.match(lines[i].strip()):
+                    txt = lines[i].strip()
+                    # Skip VTT cue settings and WEBVTT header
+                    if txt and not txt.startswith("WEBVTT") and not txt.startswith("NOTE") and "<" not in txt:
+                        sub_lines.append(txt)
+                    i += 1
+
+                if sub_lines:
+                    srt_entries.append(
+                        f"{counter}\n"
+                        f"{seconds_to_srt_time(start_s)} --> {seconds_to_srt_time(end_s)}\n"
+                        f"{chr(10).join(sub_lines)}\n"
+                    )
+                    counter += 1
+            else:
+                i += 1
+
+        if not srt_entries:
+            log.warning("No subtitle entries in clip window — skipping subtitles")
+            return False
+
+        out_srt.write_text("\n".join(srt_entries), encoding="utf-8")
+        log.info(f"Shifted {len(srt_entries)} subtitle entries (offset: -{start_sec:.1f}s) → {out_srt.name}")
+        return True
+
+    except Exception as e:
+        log.error(f"Subtitle shift failed: {e}")
+        return False
+
+
+# =============================================================================
 # Step 5 — Crop to 9:16
 # =============================================================================
 
@@ -275,13 +372,13 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
 
 
 # =============================================================================
-# Step 6 — Burn subtitles
+# Step 6 — Burn subtitles (using shifted SRT)
 # =============================================================================
 
-def burn_subtitles(input_path: Path, sub_path: Path, output_path: Path, start_sec: float = 0) -> bool:
-    safe_sub = str(sub_path).replace("\\", "/")
+def burn_subtitles(input_path: Path, srt_path: Path, output_path: Path) -> bool:
+    safe_sub = str(srt_path).replace("\\", "/").replace(":", "\\:")
     vf = (
-        f"subtitles='{safe_sub}':si=0"
+        f"subtitles='{safe_sub}'"
         f":force_style='FontSize=18,Bold=1,"
         f"PrimaryColour=&H00FFFFFF,"
         f"OutlineColour=&H00000000,"
@@ -289,7 +386,6 @@ def burn_subtitles(input_path: Path, sub_path: Path, output_path: Path, start_se
     )
     cmd = [
         "ffmpeg", "-y",
-        "-ss", str(start_sec),
         "-i", str(input_path),
         "-vf", vf,
         "-c:v", "libx264",
@@ -299,19 +395,47 @@ def burn_subtitles(input_path: Path, sub_path: Path, output_path: Path, start_se
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
-        log.warning(f"Subtitle burn failed — skipping: {result.stderr[-300:]}")
+        log.warning(f"Subtitle burn failed — using clip without subtitles: {result.stderr[-300:]}")
         shutil.copy(input_path, output_path)
     return True
 
 
 # =============================================================================
-# Step 7 — Post to Discord for approval
+# Step 7 — Compress if too large for Discord (8MB limit)
+# =============================================================================
+
+def compress_for_discord(clip_path: Path) -> Path:
+    size_mb = clip_path.stat().st_size / 1024 / 1024
+    if size_mb <= 24:
+        return clip_path
+
+    log.warning(f"Clip too large ({size_mb:.1f}MB) — compressing...")
+    compressed = clip_path.with_suffix(".small.mp4")
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(clip_path),
+        "-c:v", "libx264", "-crf", "28",
+        "-c:a", "aac", "-b:a", "96k",
+        "-preset", "fast",
+        str(compressed),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode == 0 and compressed.exists():
+        log.info(f"Compressed: {compressed.stat().st_size/1024/1024:.1f}MB")
+        return compressed
+    return clip_path
+
+
+# =============================================================================
+# Step 8 — Post to Discord for approval
 # =============================================================================
 
 def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: int) -> str | None:
     if not DISCORD_BOT_TOKEN:
         log.error("DISCORD_BOT_TOKEN not set")
         return None
+
+    clip_path = compress_for_discord(clip_path)
 
     intensity_pct = int(hotspot["intensity"] * 100)
     content = (
@@ -352,7 +476,7 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
         record = {
             "message_id": message_id,
             "clip_path":  str(clip_path),
-            "job":        {k: v for k, v in job.items() if k != "heatmap"},  # heatmap too large
+            "job":        {k: v for k, v in job.items() if k != "heatmap"},
             "hotspot":    hotspot,
             "clip_index": clip_index,
             "type":       "soap_short",
@@ -383,30 +507,37 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
 
     raw     = TMP_DIR / f"{slug}_raw.mp4"
     cropped = TMP_DIR / f"{slug}_cropped.mp4"
-    subbed  = TMP_DIR / f"{slug}_subbed.mp4"
     final   = CLIPS_DIR / f"{slug}_final.mp4"
 
     if not download_segment(url, start, CLIP_DURATION, raw):
         return None
 
-    # Fetch subtitles once per job, reuse across clips
-    sub_path = TMP_DIR / f"soap_{vid}_subs.vtt"
-    if not sub_path.exists():
-        fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
-        if fetched:
-            fetched.rename(sub_path)
-
     if not crop_to_vertical(raw, cropped):
         return None
     raw.unlink(missing_ok=True)
 
-    if sub_path.exists():
-        burn_subtitles(cropped, sub_path, subbed, start)
-        cropped.unlink(missing_ok=True)
-    else:
-        subbed = cropped
+    # Fetch subtitles once per job, reuse across clips
+    vtt_path = TMP_DIR / f"soap_{vid}_subs.vtt"
+    if not vtt_path.exists():
+        fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
+        if fetched:
+            fetched.rename(vtt_path)
 
-    shutil.move(str(subbed), str(final))
+    # Shift subtitle timestamps to match clip window
+    if vtt_path.exists():
+        srt_path = TMP_DIR / f"{slug}_shifted.srt"
+        has_subs = shift_subtitles_to_srt(vtt_path, start, srt_path)
+        if has_subs:
+            subbed = TMP_DIR / f"{slug}_subbed.mp4"
+            burn_subtitles(cropped, srt_path, subbed)
+            cropped.unlink(missing_ok=True)
+            srt_path.unlink(missing_ok=True)
+            shutil.move(str(subbed), str(final))
+        else:
+            shutil.move(str(cropped), str(final))
+    else:
+        shutil.move(str(cropped), str(final))
+
     log.info(f"Clip ready: {final}")
     return final
 
