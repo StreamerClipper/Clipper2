@@ -7,6 +7,10 @@ on:
     paths:
       - "output/pending_moments.jsonl"
 
+concurrency:
+  group: clipper-queue
+  cancel-in-progress: false
+
 jobs:
   clip:
     runs-on: ubuntu-latest
@@ -38,7 +42,7 @@ jobs:
           mkdir -p ~/.local/share/fonts
           cp fonts/LuckiestGuy-Regular.ttf ~/.local/share/fonts/
           fc-cache -fv
-      
+
       - name: Install yt-dlp
         run: |
           sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
