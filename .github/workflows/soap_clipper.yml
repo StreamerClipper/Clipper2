@@ -1,0 +1,74 @@
+name: Soap Shorts Clipper
+
+on:
+  push:
+    paths:
+      - "output/soap_pending.jsonl"
+  workflow_dispatch:
+
+jobs:
+  clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install yt-dlp
+        run: |
+          pip install yt-dlp[default]
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure yt-dlp to use node
+        run: |
+          mkdir -p ~/.config/yt-dlp
+          echo "--js-runtimes node" > ~/.config/yt-dlp/config
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg --fix-missing || \
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install requests python-dotenv google-api-python-client google-auth-oauthlib
+
+      - name: Write cookies file
+        run: echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
+
+      - name: Debug yt-dlp node
+        run: |
+          node --version
+          yt-dlp --verbose --cookies cookies.txt \
+            --list-formats "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1 | grep -i "node\|runtime\|challenge\|format"
+
+      - name: Run soap clipper
+        env:
+          DISCORD_BOT_TOKEN:     ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID:    ${{ secrets.DISCORD_CHANNEL_ID }}
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m agents.soap_clipper
+
+      - name: Commit results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/soap_pending.jsonl output/soap_processed.jsonl \
+                  output/soap_discord_pending.jsonl output/clips/ || true
+          git diff --staged --quiet || git commit -m "[soap-clipper] processed clips"
+          git push

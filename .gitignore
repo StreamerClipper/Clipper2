@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+output/logs/
+.env
+output/clips/*.mp4
+output/clips/*.ts
+output/subtitle_tests/
+/tmp/
