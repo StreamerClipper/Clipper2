@@ -103,7 +103,8 @@ def process_url(url: str) -> bool:
     try:
         subprocess.run(["git", "add", "output/soap_pending.jsonl"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
-        subprocess.run(["git", "push", "origin", "main"], cwd=cwd, check=True)
+        subprocess.run(["git", "pull", "origin", "main", "--rebase", "--strategy-option=ours"], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
         log.info("Pushed to GitHub — Actions triggered")
         discord_log(
             f"📋 **[Soap]** Episode queued — fetching hotspots and generating clips in GitHub Actions...\n`{url}`",
