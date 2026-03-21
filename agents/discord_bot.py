@@ -542,28 +542,18 @@ class ApprovalBot(discord.Client):
 
 
 def main():
-    # Prevent multiple instances
     pid_file = Path("/tmp/discord_bot.pid")
     if pid_file.exists():
-        old_pid = pid_file.read_text().strip()
         try:
-            os.kill(int(old_pid), 0)  # check if process is still running
-            log.error(f"Bot already running (PID {old_pid}) — exiting")
-            return
+            old_pid = int(pid_file.read_text().strip())
+            if old_pid <= 1:
+                pid_file.unlink(missing_ok=True)
+            else:
+                os.kill(old_pid, 0)
+                log.error(f"Bot already running (PID {old_pid}) — exiting")
+                return
         except (OSError, ValueError):
-            pass  # process is dead, continue
-    pid_file.write_text(str(os.getpid()))
-
-    token = settings.DISCORD_BOT_TOKEN
-    if not token:
-        log.error("DISCORD_BOT_TOKEN not set in .env")
-        return
-    log.info("Starting Discord approval bot...")
-    try:
-        bot = ApprovalBot()
-        bot.run(token, log_handler=None)
-    finally:
-        pid_file.unlink(missing_ok=True)
+            pid_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
