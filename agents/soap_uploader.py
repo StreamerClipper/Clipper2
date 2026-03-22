@@ -34,32 +34,65 @@ def ts_label(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def build_title(job: dict, hotspot: dict) -> str:
-    """Punchy title matching publisher.py's style."""
-    show = job.get("title", "Turkish Drama")
-    # Strip episode number suffix if present (e.g. "Kızılcık Şerbeti 45. Bölüm")
-    # Keep it short and punchy for Shorts
-    if len(show) > 40:
-        show = show[:37] + "..."
-    label = ts_label(hotspot["start_sec"])
-    return f"{show} | {label} 🔥 #Shorts"
+def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
+    """
+    Title format: "<Dizi Adı> Highlights Bölüm <episode> #<clip> #Shorts"
+    e.g. "Kızılcık Şerbeti Highlights Bölüm 45 #2 #Shorts"
+    clip_index is 1-based (which clip out of 3).
+    Episode number is extracted from the job title if present.
+    """
+    raw   = job.get("title", "Dizi")
+    show  = _strip_episode(raw)
+    if len(show) > 50:
+        show = show[:47] + "..."
 
+    # Try to extract episode number from the original title
+    episode_num = None
+    import re
+    m = re.search(r'(\d+)[.\s]*(?:Bölüm|Episode|Ep\.?)', raw, re.IGNORECASE)
+    if not m:
+        m = re.search(r'(?:Bölüm|Episode|Ep\.?)[.\s]*(\d+)', raw, re.IGNORECASE)
+    if m:
+        episode_num = m.group(1)
+
+    bolum = f"Bölüm {episode_num}" if episode_num else "Bölüm"
+    return f"{show} Highlights {bolum} #{clip_index} #Shorts"
 
 def build_description(job: dict, hotspot: dict) -> str:
-    intensity_pct = int(hotspot["intensity"] * 100)
-    return (
-        f"Most replayed moment from: {job['title']}\n"
-        f"⏱ Timestamp: {ts_label(hotspot['start_sec'])}\n"
-        f"📊 Most Replayed intensity: {intensity_pct}%\n"
-        f"📺 Full episode: {job['url']}\n\n"
-        "#Shorts #TurkishDrama #Dizi #TurkishSeries #DiziFan"
-    )
+    """Claude-generated Turkish description. Falls back to a sensible default."""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    show    = _strip_episode(job.get("title", "Dizi"))
 
+    if not api_key:
+        return f"{show} — en çok tekrar izlenen an. #Shorts #Dizi"
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=150,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Türk dizisi '{show}' için YouTube Shorts açıklaması yaz.\n"
+                    "Max 120 karakter, Türkçe, spoiler verme, merak uyandır.\n"
+                    "Sadece açıklama metnini yaz, başka hiçbir şey yazma."
+                ),
+            }],
+        )
+        return message.content[0].text.strip()
+    except Exception as e:
+        log.warning(f"Claude description failed: {e}")
+        return f"{show} — en çok tekrar izlenen an. #Shorts #Dizi"
 
 def build_tags(job: dict) -> list[str]:
-    base = ["Shorts", "Turkish drama", "Turkish series", "dizi", "turkish dizi"]
-    words = [w for w in job.get("title", "").split() if len(w) > 2][:5]
-    return base + words
+    """Turkish-first tags derived from the show title."""
+    show  = _strip_episode(job.get("title", "Dizi"))
+    slug  = show.replace(" ", "")          # e.g. "KızılcıkŞerbeti"
+    words = [w for w in show.split() if len(w) > 2][:4]
+    # full show name first (most searchable), then slug, individual words, generic tags
+    return [show, slug] + words + ["shorts", "dizi", "türkdizisi", "türkdizileri"]
 
 
 # =============================================================================
@@ -72,7 +105,6 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
     Imports it directly to avoid duplicating OAuth logic.
     """
     try:
-        # Use existing youtube_upload agent if it exists
         from agents.youtube_upload import upload_to_youtube as _upload
         video_id = _upload(clip_path, title, description, tags)
         return video_id
@@ -118,8 +150,8 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
             "defaultLanguage": "tr",
         },
         "status": {
-            "privacyStatus":            os.getenv("YT_UPLOAD_PRIVACY", "public"),
-            "selfDeclaredMadeForKids":  False,
+            "privacyStatus":           os.getenv("YT_UPLOAD_PRIVACY", "public"),
+            "selfDeclaredMadeForKids": False,
         },
     }
 
@@ -156,11 +188,15 @@ def handle_approval(record: dict) -> str | None:
     job       = record["job"]
     hotspot   = record["hotspot"]
 
+    # clip_index: handle both 0-based and 1-based
+    raw_index   = record.get("clip_index", 0)
+    clip_number = raw_index if raw_index >= 1 else raw_index + 1
+
     if not clip_path.exists():
         log.error(f"Clip file not found: {clip_path}")
         return None
 
-    title       = build_title(job, hotspot)
+    title       = build_title(job, hotspot, clip_index=clip_number)
     description = build_description(job, hotspot)
     tags        = build_tags(job)
 
