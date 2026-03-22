@@ -20,6 +20,7 @@ import sys
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
+import html
 
 import requests
 
@@ -304,7 +305,7 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
                 i += 1
                 sub_lines = []
                 while i < len(lines) and lines[i].strip() != "" and not ts_pattern.match(lines[i].strip()):
-                    txt = lines[i].strip()
+                    txt = html.unescape(lines[i].strip())
                     # Skip VTT cue settings and WEBVTT header
                     if txt and not txt.startswith("WEBVTT") and not txt.startswith("NOTE") and "<" not in txt:
                         sub_lines.append(txt)
@@ -526,7 +527,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     # Shift subtitle timestamps to match clip window
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
-        has_subs = shift_subtitles_to_srt(vtt_path, start, srt_path)
+        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start - 1.0), srt_path)
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
             burn_subtitles(cropped, srt_path, subbed)
