@@ -7,16 +7,16 @@ output/clips/*.mp4
 output/clips/*.ts
 output/subtitle_tests/
 /tmp/
-output/*.jsonl
-output/*.jsonl
-output/*.jsonl
-output/*.jsonl
-output/*.jsonl
-output/*.jsonl
-output/*.json
-output/*.txt
 output/clips/
 cookies.txt
 *.bak
 *~
 output/discord_pending.jsonl.bak
+# Ignore local-only runtime files
+output/discord_pending.jsonl
+output/pending_moments.jsonl
+output/processed_moments.jsonl
+output/soap_pending.jsonl
+# DO NOT ignore these — they must flow from Actions to PythonAnywhere:
+# output/soap_discord_pending.jsonl
+# output/soap_processed.jsonl
