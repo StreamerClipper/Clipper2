@@ -197,6 +197,20 @@ class ApprovalBot(discord.Client):
 
     async def on_ready(self):
         log.info(f"Discord bot ready — logged in as {self.user}")
+        # Pull latest from GitHub so soap_discord_pending.jsonl is up to date
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                cwd=Path("/home/StreamerClipper/clipbot"),
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                log.info("git pull OK")
+            else:
+                log.warning(f"git pull failed: {result.stderr[:200]}")
+        except Exception as e:
+            log.warning(f"git pull error: {e}")
 
         channel = self.get_channel(self.channel_id)
         if channel:
@@ -446,6 +460,8 @@ class ApprovalBot(discord.Client):
                         await clips_channel.send(f"🎬 **Soap Short uploaded!** {yt_url}")
                         if log_channel:
                             await log_channel.send(f"✅ Clip {soap_record.get('clip_index', 0)+1} uploaded: {yt_url}")
+                        await asyncio.sleep(3)       # ← add this
+                        await message_obj.delete()   # ← add this
                     else:
                         await clips_channel.send("❌ YouTube upload failed — check logs.")
                 except Exception as e:
