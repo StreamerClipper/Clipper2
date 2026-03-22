@@ -111,16 +111,18 @@ def process_url(url: str, mute: bool = False) -> bool:
     # (soap_pending.jsonl is gitignored so we can't commit it directly)
     cwd = Path("/home/StreamerClipper/clipbot")
     try:
+        # Stash FIRST before touching anything
+        subprocess.run(["git", "stash"], cwd=cwd, check=False)
+
+        # Write trigger file
         trigger = cwd / ".soap_trigger"
         trigger.write_text(json.dumps({
             "url":       url,
             "queued_at": job["queued_at"],
             "mute":      mute,
-            "ts":        datetime.now(timezone.utc).isoformat(),  # forces unique commit
+            "ts":        datetime.now(timezone.utc).isoformat(),
         }) + "\n")
 
-        # Stash any uncommitted changes first
-        subprocess.run(["git", "stash"], cwd=cwd, check=False)
         subprocess.run(["git", "add", ".soap_trigger"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
         subprocess.run(["git", "fetch", "origin", "main"], cwd=cwd, check=True)
