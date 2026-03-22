@@ -16,3 +16,7 @@ output/*.jsonl
 output/*.json
 output/*.txt
 output/clips/
+cookies.txt
+*.bak
+*~
+output/discord_pending.jsonl.bak
