@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -25,199 +26,161 @@ logging.basicConfig(
 )
 
 
-# =============================================================================
-# Build video metadata
-# =============================================================================
-
-def ts_label(seconds: float) -> str:
-    m, s = divmod(int(seconds), 60)
-    return f"{m:02d}:{s:02d}"
+def _strip_episode(title: str) -> str:
+    for sep in [" - ", " | ", ". B\u00f6l\u00fcm", " B\u00f6l\u00fcm", " Episode"]:
+        if sep in title:
+            return title.split(sep)[0].strip()
+    return title
 
 
 def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
-    """
-    Title format: "<Dizi Adı> Highlights Bölüm <episode> #<clip> #Shorts"
-    e.g. "Kızılcık Şerbeti Highlights Bölüm 45 #2 #Shorts"
-    clip_index is 1-based (which clip out of 3).
-    Episode number is extracted from the job title if present.
-    """
-    raw   = job.get("title", "Dizi")
-    show  = _strip_episode(raw)
+    raw  = job.get("title", "Dizi")
+    show = _strip_episode(raw)
     if len(show) > 50:
         show = show[:47] + "..."
-
-    # Try to extract episode number from the original title
     episode_num = None
-    import re
-    m = re.search(r'(\d+)[.\s]*(?:Bölüm|Episode|Ep\.?)', raw, re.IGNORECASE)
+    m = re.search(r'(\d+)[.\s]*(?:B\u00f6l\u00fcm|Episode|Ep\.?)', raw, re.IGNORECASE)
     if not m:
-        m = re.search(r'(?:Bölüm|Episode|Ep\.?)[.\s]*(\d+)', raw, re.IGNORECASE)
+        m = re.search(r'(?:B\u00f6l\u00fcm|Episode|Ep\.?)[.\s]*(\d+)', raw, re.IGNORECASE)
     if m:
         episode_num = m.group(1)
-
-    bolum = f"Bölüm {episode_num}" if episode_num else "Bölüm"
+    bolum = f"B\u00f6l\u00fcm {episode_num}" if episode_num else "B\u00f6l\u00fcm"
     return f"{show} Highlights {bolum} #{clip_index} #Shorts"
 
+
 def build_description(job: dict, hotspot: dict) -> str:
-    """Claude-generated Turkish description. Falls back to a sensible default."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     show    = _strip_episode(job.get("title", "Dizi"))
-
     if not api_key:
-        return f"{show} — en çok tekrar izlenen an. #Shorts #Dizi"
-
+        return f"{show} \u2014 en \u00e7ok tekrar izlenen an. #Shorts #Dizi"
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=150,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Türk dizisi '{show}' için YouTube Shorts açıklaması yaz.\n"
-                    "Max 120 karakter, Türkçe, spoiler verme, merak uyandır.\n"
-                    "Sadece açıklama metnini yaz, başka hiçbir şey yazma."
-                ),
-            }],
+            messages=[{"role": "user", "content": (
+                f"T\u00fcrk dizisi '{show}' i\u00e7in YouTube Shorts a\u00e7\u0131klamas\u0131 yaz.\n"
+                "Max 120 karakter, T\u00fcrk\u00e7e, spoiler verme, merak uyand\u0131r.\n"
+                "Sadece a\u00e7\u0131klama metnini yaz, ba\u015fka hi\u00e7bir \u015fey yazma."
+            )}],
         )
         return message.content[0].text.strip()
     except Exception as e:
         log.warning(f"Claude description failed: {e}")
-        return f"{show} — en çok tekrar izlenen an. #Shorts #Dizi"
+        return f"{show} \u2014 en \u00e7ok tekrar izlenen an. #Shorts #Dizi"
+
 
 def build_tags(job: dict) -> list[str]:
-    """Turkish-first tags derived from the show title."""
     show  = _strip_episode(job.get("title", "Dizi"))
-    slug  = show.replace(" ", "")          # e.g. "KızılcıkŞerbeti"
+    slug  = show.replace(" ", "")
     words = [w for w in show.split() if len(w) > 2][:4]
-    # full show name first (most searchable), then slug, individual words, generic tags
-    return [show, slug] + words + ["shorts", "dizi", "türkdizisi", "türkdizileri"]
+    return [show, slug] + words + ["shorts", "dizi", "t\u00fcrkdizisi", "t\u00fcrkdizileri"]
 
 
-# =============================================================================
-# Upload — reuses same credentials as existing youtube_upload.py
-# =============================================================================
+def download_from_discord(message_id: str, dest: Path) -> bool:
+    token = settings.DISCORD_BOT_TOKEN
+    if not token:
+        log.error("DISCORD_BOT_TOKEN not set")
+        return False
+    SOAP_CLIPS_CHANNEL_ID = "1484834736257106020"
+    try:
+        import requests
+        resp = requests.get(
+            f"https://discord.com/api/v10/channels/{SOAP_CLIPS_CHANNEL_ID}/messages/{message_id}",
+            headers={"Authorization": f"Bot {token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            log.error(f"Could not fetch Discord message {message_id}: {resp.status_code}")
+            return False
+        attachments = resp.json().get("attachments", [])
+        if not attachments:
+            log.error(f"No attachments on Discord message {message_id}")
+            return False
+        video_url = attachments[0]["url"]
+        log.info(f"Downloading clip from Discord: {video_url[:80]}...")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with requests.get(video_url, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(dest, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+                    f.write(chunk)
+        size_mb = dest.stat().st_size / 1024 / 1024
+        log.info(f"Downloaded {size_mb:.1f}MB \u2192 {dest.name}")
+        return True
+    except Exception as e:
+        log.error(f"Discord download failed: {e}")
+        return False
+
 
 def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[str]) -> str | None:
-    """
-    Reuses the same upload path as agents/youtube_upload.py.
-    Imports it directly to avoid duplicating OAuth logic.
-    """
     try:
         from agents.youtube_upload import upload_to_youtube as _upload
-        video_id = _upload(clip_path, title, description, tags)
-        return video_id
+        return _upload(clip_path, title, description, tags)
     except ImportError:
         pass
-
-    # Fallback: inline upload using googleapiclient
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
     except ImportError:
-        log.error("google-api-python-client not installed. Run: pip install google-api-python-client")
+        log.error("google-api-python-client not installed")
         return None
-
-    client_id     = settings.YOUTUBE_CLIENT_ID
-    client_secret = settings.YOUTUBE_CLIENT_SECRET
-    refresh_token = settings.YOUTUBE_REFRESH_TOKEN
-
-    if not all([client_id, client_secret, refresh_token]):
-        log.error("Missing YouTube credentials in settings")
-        return None
-
     creds = Credentials(
         token=None,
-        refresh_token=refresh_token,
+        refresh_token=settings.YOUTUBE_REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=client_id,
-        client_secret=client_secret,
+        client_id=settings.YOUTUBE_CLIENT_ID,
+        client_secret=settings.YOUTUBE_CLIENT_SECRET,
         scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
     creds.refresh(Request())
-
     youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
-
     body = {
-        "snippet": {
-            "title":           title,
-            "description":     description,
-            "tags":            tags,
-            "categoryId":      "24",   # Entertainment
-            "defaultLanguage": "tr",
-        },
-        "status": {
-            "privacyStatus":           os.getenv("YT_UPLOAD_PRIVACY", "public"),
-            "selfDeclaredMadeForKids": False,
-        },
+        "snippet": {"title": title, "description": description, "tags": tags, "categoryId": "24", "defaultLanguage": "tr"},
+        "status": {"privacyStatus": os.getenv("YT_UPLOAD_PRIVACY", "public"), "selfDeclaredMadeForKids": False},
     }
-
-    media = MediaFileUpload(
-        str(clip_path),
-        mimetype="video/mp4",
-        resumable=True,
-        chunksize=10 * 1024 * 1024,
-    )
-
+    media = MediaFileUpload(str(clip_path), mimetype="video/mp4", resumable=True, chunksize=10*1024*1024)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = None
     while response is None:
         status, response = request.next_chunk()
         if status:
-            log.info(f"Upload {int(status.progress() * 100)}%...")
-
+            log.info(f"Upload {int(status.progress()*100)}%...")
     video_id = response["id"]
     log.info(f"Uploaded: https://youtube.com/shorts/{video_id}")
     return video_id
 
 
-# =============================================================================
-# Main entry point — called by discord_bot.py on ✅ reaction
-# =============================================================================
-
 def handle_approval(record: dict) -> str | None:
-    """
-    Called from discord_bot.py's on_raw_reaction_add when type == 'soap_short'.
-    record keys: clip_path, job, hotspot, clip_index
-    Returns YouTube Shorts URL or None.
-    """
-    clip_path = Path(record["clip_path"])
     job       = record["job"]
     hotspot   = record["hotspot"]
-
-    # clip_index: handle both 0-based and 1-based
-    raw_index   = record.get("clip_index", 0)
+    raw_index = record.get("clip_index", 0)
     clip_number = raw_index if raw_index >= 1 else raw_index + 1
-
-    if not clip_path.exists():
-        log.error(f"Clip file not found: {clip_path}")
-        return None
-
+    tmp_path = Path(f"/tmp/soap_clip_{record['message_id']}.mp4")
+    if not tmp_path.exists():
+        log.info("Clip not on disk \u2014 downloading from Discord attachment...")
+        if not download_from_discord(str(record["message_id"]), tmp_path):
+            return None
     title       = build_title(job, hotspot, clip_index=clip_number)
     description = build_description(job, hotspot)
     tags        = build_tags(job)
-
     log.info(f"Uploading: {title}")
-    video_id = upload_to_youtube(clip_path, title, description, tags)
-
+    try:
+        video_id = upload_to_youtube(tmp_path, title, description, tags)
+    finally:
+        tmp_path.unlink(missing_ok=True)
     if video_id:
-        clip_path.unlink(missing_ok=True)   # clean up after successful upload
         return f"https://youtube.com/shorts/{video_id}"
     return None
 
 
-# =============================================================================
-# CLI entry point
-# =============================================================================
-
 def main():
-    parser = argparse.ArgumentParser(description="Soap Opera Shorts — YouTube Uploader")
-    parser.add_argument("--record", required=True, help="JSON record string from soap_discord_pending.jsonl")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--record", required=True)
     args = parser.parse_args()
-
     record = json.loads(args.record)
     url = handle_approval(record)
     if url:
