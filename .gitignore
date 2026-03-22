@@ -26,3 +26,4 @@ output/*.ts
 output/logs/
 output/clips/
 output/*.ts
+cookies.txt
