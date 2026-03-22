@@ -14,7 +14,7 @@ concurrency:
 jobs:
   clip:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: write
 
@@ -59,14 +59,20 @@ jobs:
           yt-dlp --verbose --cookies cookies.txt \
             --list-formats "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1 | grep -i "node\|runtime\|challenge\|format"
 
+      - name: Install Python dependencies
+        run: pip install requests python-dotenv google-api-python-client google-auth-oauthlib openai-whisper
+
       - name: Run soap clipper
         env:
-          DISCORD_BOT_TOKEN:     ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_CHANNEL_ID:    ${{ secrets.DISCORD_CHANNEL_ID }}
-          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+          DISCORD_BOT_TOKEN:          ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID:         ${{ secrets.DISCORD_CHANNEL_ID }}
+          YOUTUBE_CLIENT_ID:          ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET:      ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN:      ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          SOAP_YOUTUBE_CLIENT_ID:     ${{ secrets.SOAP_YOUTUBE_CLIENT_ID }}
+          SOAP_YOUTUBE_CLIENT_SECRET: ${{ secrets.SOAP_YOUTUBE_CLIENT_SECRET }}
+          SOAP_YOUTUBE_REFRESH_TOKEN: ${{ secrets.SOAP_YOUTUBE_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m agents.soap_clipper
 
       - name: Commit results
