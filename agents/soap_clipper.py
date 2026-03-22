@@ -106,8 +106,9 @@ def load_next_job():
             if url:
                 job = {
                     "url":       url,
-                    "title":     url,  # will be overwritten by fetch_video_metadata
+                    "title":     url,
                     "queued_at": data.get("queued_at", ""),
+                    "mute":      data.get("mute", False),  # ← add this
                 }
                 log.info(f"Loaded job from .soap_trigger: {url}")
                 return job, []
@@ -355,6 +356,21 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
         return False
 
 
+def mute_audio(input_path: Path, output_path: Path) -> bool:
+    """Strip audio track to avoid copyright claims."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(input_path),
+        "-an",
+        "-c:v", "copy",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        log.warning(f"Mute failed — keeping audio: {result.stderr[-200:]}")
+        shutil.copy(input_path, output_path)
+    return True
+
 # =============================================================================
 # Step 5 — Crop to 9:16
 # =============================================================================
@@ -526,6 +542,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     slug  = f"soap_{vid}_clip{clip_index}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
     url   = job["url"]
     start = hotspot["start_sec"]
+    mute    = job.get("mute", False)
 
     raw     = TMP_DIR / f"{slug}_raw.mp4"
     cropped = TMP_DIR / f"{slug}_cropped.mp4"
@@ -544,6 +561,12 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
         if fetched:
             fetched.rename(vtt_path)
+
+    if mute:
+        muted = TMP_DIR / f"{slug}_muted.mp4"
+        mute_audio(cropped, muted)
+        cropped.unlink(missing_ok=True)
+        cropped = muted
 
     # Shift subtitle timestamps to match clip window
     if vtt_path.exists():

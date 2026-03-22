@@ -257,17 +257,26 @@ class ApprovalBot(discord.Client):
 
         # ── Soap commands (separate input channel) ────────────────────────────
         if message.channel.id == SOAP_INPUT_CHANNEL_ID:
-            if content.startswith("!soap clip "):
-                url = content[len("!soap clip "):].strip()
+            if content.startswith("clip "):
+                rest = content[len("clip "):].strip()
+                mute = False
+                if rest.startswith("mute "):
+                    mute = True
+                    url = rest[len("mute "):].strip()
+                else:
+                    url = rest
+
                 if not url.startswith("http"):
-                    await message.channel.send("❌ Usage: `!soap clip https://www.youtube.com/watch?v=...`")
+                    await message.channel.send("❌ Usage: `!soap clip <url>` or `!soap clip mute <url>`")
                     return
                 await message.channel.send(
-                    f"🔍 Analysing Most Replayed data for:\n`{url}`\n⏳ This takes ~30 seconds..."
+                    f"🔍 Analysing Most Replayed data for:\n`{url}`\n"
+                    f"{'🔇 Audio will be muted' if mute else ''}\n⏳ This takes ~30 seconds..."
                 )
                 import subprocess
                 subprocess.Popen(
-                    [sys.executable, "-m", "agents.soap_scout", "--url", url],
+                    [sys.executable, "-m", "agents.soap_scout", "--url", url]
+                    + (["--mute"] if mute else []),
                     cwd=Path(".").resolve(),
                 )
                 await message.channel.send(
@@ -323,12 +332,12 @@ class ApprovalBot(discord.Client):
             if content in ("!soap", "!soap help"):
                 await message.channel.send(
                     "**Soap Shorts Commands:**\n"
-                    "`!soap clip <youtube-url>` — queue an episode for clipping\n"
+                    "`clip <youtube-url>` — queue an episode for clipping\n"
+                    "`clip mute <youtube-url>` — queue with audio muted (copyright safe)\n"
                     "`!soap status` — show pending jobs\n\n"
                     "Clips appear in <#1484834736257106020> with ✅/❌ buttons.\n"
                     "✅ uploads to YouTube Shorts · ❌ discards"
                 )
-                return
 
             return  # ignore anything else in the soap input channel
         # ── End soap commands ─────────────────────────────────────────────────

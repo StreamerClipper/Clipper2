@@ -20,3 +20,9 @@ output/soap_pending.jsonl
 # DO NOT ignore these — they must flow from Actions to PythonAnywhere:
 # output/soap_discord_pending.jsonl
 # output/soap_processed.jsonl
+output/logs/
+output/clips/
+output/*.ts
+output/logs/
+output/clips/
+output/*.ts

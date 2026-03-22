@@ -82,7 +82,7 @@ def mark_seen(video_id: str):
 # Queue + git push (triggers GitHub Actions)
 # =============================================================================
 
-def process_url(url: str) -> bool:
+def process_url(url: str, mute: bool = False) -> bool:
     log.info(f"Queuing: {url}")
 
     # Fetch title for commit message
@@ -102,6 +102,7 @@ def process_url(url: str) -> bool:
         "url":       url,
         "title":     title,
         "queued_at": datetime.now(timezone.utc).isoformat(),
+        "mute":      mute,
     }
     with open(SOAP_PENDING_FILE, "a") as f:
         f.write(json.dumps(job) + "\n")
@@ -111,7 +112,7 @@ def process_url(url: str) -> bool:
     cwd = Path("/home/StreamerClipper/clipbot")
     try:
         trigger = cwd / ".soap_trigger"
-        trigger.write_text(json.dumps({"url": url, "queued_at": job["queued_at"]}) + "\n")
+        trigger.write_text(json.dumps({"url": url, "queued_at": job["queued_at"],"mute":      mute,}) + "\n")
 
         subprocess.run(["git", "add", ".soap_trigger"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
@@ -196,13 +197,14 @@ def main():
     parser.add_argument("--url",      help="Queue a single YouTube URL immediately")
     parser.add_argument("--playlist", help="Poll a playlist URL")
     parser.add_argument("--debug",    action="store_true")
+    parser.add_argument("--mute", action="store_true", help="Mute audio to avoid copyright")
     args = parser.parse_args()
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.url:
-        ok = process_url(args.url)
+        ok = process_url(args.url, mute=args.mute)
         sys.exit(0 if ok else 1)
 
     playlist_url = args.playlist or os.getenv("SOAP_PLAYLIST_URL")
