@@ -119,9 +119,10 @@ def process_url(url: str, mute: bool = False) -> bool:
             "ts":        datetime.now(timezone.utc).isoformat(),  # forces unique commit
         }) + "\n")
 
+        # Stash any uncommitted changes first
+        subprocess.run(["git", "stash"], cwd=cwd, check=False)
         subprocess.run(["git", "add", ".soap_trigger"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
-        subprocess.run(["git", "stash"], cwd=cwd, check=False)
         subprocess.run(["git", "fetch", "origin", "main"], cwd=cwd, check=True)
         subprocess.run(["git", "rebase", "origin/main"], cwd=cwd, check=True)
         subprocess.run(["git", "stash", "pop"], cwd=cwd, check=False)
