@@ -112,7 +112,12 @@ def process_url(url: str, mute: bool = False) -> bool:
     cwd = Path("/home/StreamerClipper/clipbot")
     try:
         trigger = cwd / ".soap_trigger"
-        trigger.write_text(json.dumps({"url": url, "queued_at": job["queued_at"],"mute":      mute,}) + "\n")
+        trigger.write_text(json.dumps({
+            "url":       url,
+            "queued_at": job["queued_at"],
+            "mute":      mute,
+            "ts":        datetime.now(timezone.utc).isoformat(),  # forces unique commit
+        }) + "\n")
 
         subprocess.run(["git", "add", ".soap_trigger"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
