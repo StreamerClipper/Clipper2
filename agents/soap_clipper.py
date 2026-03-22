@@ -91,12 +91,30 @@ def ts_label(seconds: float) -> str:
 # =============================================================================
 
 def load_next_job():
-    if not SOAP_PENDING_FILE.exists():
-        return None, None
-    lines = [l for l in SOAP_PENDING_FILE.read_text().strip().splitlines() if l.strip()]
-    if not lines:
-        return None, None
-    return json.loads(lines[-1]), lines
+    # Primary: read from soap_pending.jsonl
+    if SOAP_PENDING_FILE.exists():
+        lines = [l for l in SOAP_PENDING_FILE.read_text().strip().splitlines() if l.strip()]
+        if lines:
+            return json.loads(lines[-1]), lines
+
+    # Fallback: read from .soap_trigger (written by scout, committed to git)
+    trigger = Path(".soap_trigger")
+    if trigger.exists():
+        try:
+            data = json.loads(trigger.read_text().strip())
+            url = data.get("url", "")
+            if url:
+                job = {
+                    "url":       url,
+                    "title":     url,  # will be overwritten by fetch_video_metadata
+                    "queued_at": data.get("queued_at", ""),
+                }
+                log.info(f"Loaded job from .soap_trigger: {url}")
+                return job, []
+        except Exception as e:
+            log.error(f"Failed to read .soap_trigger: {e}")
+
+    return None, None
 
 
 def mark_processed(job: dict, lines: list[str]):
