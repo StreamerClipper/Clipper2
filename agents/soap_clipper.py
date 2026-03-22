@@ -383,7 +383,7 @@ def burn_subtitles(input_path: Path, srt_path: Path, output_path: Path) -> bool:
     safe_sub = str(srt_path).replace("\\", "/").replace(":", "\\:")
     vf = (
         f"subtitles='{safe_sub}'"
-        f":force_style='FontSize=18,Bold=1,"
+        f":force_style='FontSize=14,Bold=1,"
         f"PrimaryColour=&H00FFFFFF,"
         f"OutlineColour=&H00000000,"
         f"Outline=2,Shadow=1,MarginV=30'"
@@ -530,7 +530,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     # Shift subtitle timestamps to match clip window
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
-        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start - 1.0), srt_path)
+        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start - 2.0), srt_path)
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
             burn_subtitles(cropped, srt_path, subbed)
