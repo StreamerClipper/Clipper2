@@ -427,15 +427,44 @@ class ApprovalBot(discord.Client):
         # ── Soap clip approval (separate clips channel) ───────────────────────
         if payload.channel_id == SOAP_CLIPS_CHANNEL_ID:
             # Always pull latest so soap_discord_pending.jsonl is fresh
+            # Fetch new records from GitHub without overwriting local removals
             try:
                 import subprocess
-                subprocess.run(
-                    ["git", "pull", "origin", "main"],
-                    cwd=Path("/home/StreamerClipper/clipbot"),
-                    capture_output=True, timeout=15,
-                )
-            except Exception:
-                pass
+                cwd = Path("/home/StreamerClipper/clipbot")
+                soap_path_local = Path("output/soap_discord_pending.jsonl")
+
+                # Fetch remote
+                subprocess.run(["git", "fetch", "origin", "main"],
+                    cwd=cwd, capture_output=True, timeout=15)
+
+                # Get remote records
+                result = subprocess.run(
+                    ["git", "show", "origin/main:output/soap_discord_pending.jsonl"],
+                    cwd=cwd, capture_output=True, text=True, timeout=10)
+
+                if result.returncode == 0:
+                    # Merge: keep local records + add any new remote ones
+                    local_ids = set()
+                    local_lines = []
+                    if soap_path_local.exists():
+                        for l in soap_path_local.read_text().strip().splitlines():
+                            if l.strip():
+                                local_lines.append(l)
+                                try:
+                                    local_ids.add(json.loads(l)["message_id"])
+                                except Exception:
+                                    pass
+                    for l in result.stdout.strip().splitlines():
+                        if l.strip():
+                            try:
+                                if json.loads(l)["message_id"] not in local_ids:
+                                    local_lines.append(l)
+                            except Exception:
+                                pass
+                    soap_path_local.write_text("\n".join(local_lines) + "\n" if local_lines else "")
+                    log.info(f"Pending file synced: {len(local_lines)} records")
+            except Exception as e:
+                log.warning(f"Pending sync error: {e}")
             if payload.user_id == self.user.id:
                 return
             if self.owner_id and payload.user_id != self.owner_id:
