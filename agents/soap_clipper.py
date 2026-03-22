@@ -532,30 +532,40 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
 def generate_whisper_subtitles(video_path: Path, stem: Path) -> Path | None:
     """
     Generate subtitles using OpenAI Whisper when no official subs available.
-    Outputs a .vtt file at stem.vtt
     """
     try:
         import subprocess
-        # Install whisper if not present
         subprocess.run(
             ["pip", "install", "openai-whisper", "--quiet"],
             capture_output=True, timeout=120
         )
-        out_vtt = Path(f"{stem}.vtt")
         cmd = [
             "whisper",
             str(video_path),
-            "--language", "tr",        # Turkish
+            "--language", "tr",
             "--output_format", "vtt",
             "--output_dir", str(stem.parent),
             "--model", "medium",
             "--task", "transcribe",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode == 0 and out_vtt.exists():
+
+        # Whisper names output after the input file, not our stem
+        # e.g. input: soap_xxx_raw.mp4 → output: soap_xxx_raw.vtt
+        expected = stem.parent / f"{video_path.stem}.vtt"
+        out_vtt  = Path(f"{stem}.vtt")
+
+        if expected.exists():
+            expected.rename(out_vtt)
             log.info(f"Whisper generated subtitles: {out_vtt}")
             return out_vtt
         else:
+            # Search for any .vtt in the output dir as fallback
+            vtts = list(stem.parent.glob("*.vtt"))
+            if vtts:
+                vtts[0].rename(out_vtt)
+                log.info(f"Whisper generated subtitles (found): {out_vtt}")
+                return out_vtt
             log.warning(f"Whisper failed: {result.stderr[-200:]}")
             return None
     except Exception as e:
