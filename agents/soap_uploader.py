@@ -130,11 +130,17 @@ def download_from_discord(message_id: str, dest: Path) -> bool:
 
 
 def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[str]) -> str | None:
-    try:
-        from agents.youtube_upload import upload_to_youtube as _upload
-        return _upload(clip_path, title, description, tags)
-    except ImportError:
-        pass
+    import os
+    # Use dizikliper-specific credentials if available, otherwise fall back to default
+    client_id     = os.getenv("SOAP_YOUTUBE_CLIENT_ID")     or settings.YOUTUBE_CLIENT_ID
+    client_secret = os.getenv("SOAP_YOUTUBE_CLIENT_SECRET") or settings.YOUTUBE_CLIENT_SECRET
+    refresh_token = os.getenv("SOAP_YOUTUBE_REFRESH_TOKEN") or settings.YOUTUBE_REFRESH_TOKEN
+
+    if os.getenv("SOAP_YOUTUBE_REFRESH_TOKEN"):
+        log.info("Using dizikliper channel credentials")
+    else:
+        log.warning("SOAP_YOUTUBE_REFRESH_TOKEN not set — using default channel")
+
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
@@ -143,12 +149,13 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
     except ImportError:
         log.error("google-api-python-client not installed")
         return None
+
     creds = Credentials(
         token=None,
-        refresh_token=settings.YOUTUBE_REFRESH_TOKEN,
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.YOUTUBE_CLIENT_ID,
-        client_secret=settings.YOUTUBE_CLIENT_SECRET,
+        client_id=client_id,
+        client_secret=client_secret,
         scopes=["https://www.googleapis.com/auth/youtube.upload"],
     )
     creds.refresh(Request())
