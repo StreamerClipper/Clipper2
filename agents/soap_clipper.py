@@ -597,40 +597,42 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         return None
     raw.unlink(missing_ok=True)
 
-    # Fetch subtitles once per job, reuse across clips
+    # Generate/fetch subtitles BEFORE muting (Whisper needs audio)
     vtt_path = TMP_DIR / f"soap_{vid}_subs.vtt"
+    whisper_subs = False
     if not vtt_path.exists():
         fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
         if fetched:
             fetched.rename(vtt_path)
         elif mute:
-            # No subtitles available + muted — generate with Whisper
-            log.info("No subtitles found — generating with Whisper...")
-            generated = generate_whisper_subtitles(raw if raw.exists() else cropped, TMP_DIR / f"soap_{vid}_subs")
+            # No official subs — generate with Whisper from cropped clip (has audio)
+            log.info("No subtitles found — generating with Whisper from cropped clip...")
+            generated = generate_whisper_subtitles(cropped, TMP_DIR / f"soap_{vid}_clip{clip_index}_subs")
             if generated:
-                generated.rename(vtt_path)
+                vtt_path = generated
+                whisper_subs = True
 
+    # Burn subtitles
+    if vtt_path.exists():
+        srt_path = TMP_DIR / f"{slug}_shifted.srt"
+        # Whisper subs from cropped clip are already 0-based — no offset needed
+        offset = 0.0 if whisper_subs else max(0.0, start)
+        has_subs = shift_subtitles_to_srt(vtt_path, offset, srt_path)
+        if has_subs:
+            subbed = TMP_DIR / f"{slug}_subbed.mp4"
+            burn_subtitles(cropped, srt_path, subbed)
+            cropped.unlink(missing_ok=True)
+            srt_path.unlink(missing_ok=True)
+            cropped = subbed  # now subtitled, still has audio
+
+    ## Mute AFTER subtitles are burned in
     if mute:
         muted = TMP_DIR / f"{slug}_muted.mp4"
         mute_audio(cropped, muted)
         cropped.unlink(missing_ok=True)
         cropped = muted
 
-    # Shift subtitle timestamps to match clip window
-    if vtt_path.exists():
-        srt_path = TMP_DIR / f"{slug}_shifted.srt"
-        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start), srt_path)
-        if has_subs:
-            subbed = TMP_DIR / f"{slug}_subbed.mp4"
-            burn_subtitles(cropped, srt_path, subbed)
-            cropped.unlink(missing_ok=True)
-            srt_path.unlink(missing_ok=True)
-            shutil.move(str(subbed), str(final))
-        else:
-            shutil.move(str(cropped), str(final))
-    else:
-        shutil.move(str(cropped), str(final))
-
+    shutil.move(str(cropped), str(final))
     log.info(f"Clip ready: {final}")
     return final
 
