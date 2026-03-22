@@ -530,7 +530,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     # Shift subtitle timestamps to match clip window
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
-        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start - 2.0), srt_path)
+        has_subs = shift_subtitles_to_srt(vtt_path, max(0.0, start), srt_path)
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
             burn_subtitles(cropped, srt_path, subbed)
