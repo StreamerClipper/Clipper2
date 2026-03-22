@@ -8,3 +8,4 @@ output/clips/*.ts
 output/subtitle_tests/
 /tmp/
 output/*.jsonl
+output/*.jsonl

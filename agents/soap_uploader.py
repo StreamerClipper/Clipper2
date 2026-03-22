@@ -27,9 +27,16 @@ logging.basicConfig(
 
 
 def _strip_episode(title: str) -> str:
-    for sep in [" - ", " | ", ". B\u00f6l\u00fcm", " B\u00f6l\u00fcm", " Episode"]:
+    import re
+    # Remove channel suffix like @showtv
+    title = re.sub(r'\s*@\w+\s*$', '', title).strip()
+    # Remove known episode separators
+    for sep in [". Bölüm", " Bölüm", " - ", " | ", " Episode"]:
         if sep in title:
-            return title.split(sep)[0].strip()
+            title = title.split(sep)[0].strip()
+            break
+    # Remove trailing episode number e.g. "Kızılcık Şerbeti 129"
+    title = re.sub(r'\s+\d+$', '', title).strip()
     return title
 
 
@@ -51,8 +58,12 @@ def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
 def build_description(job: dict, hotspot: dict) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     show    = _strip_episode(job.get("title", "Dizi"))
+    tags    = build_tags(job)
+    hashtag_str = " ".join(f"#{t.lstrip('#')}" for t in tags)
+
     if not api_key:
-        return f"{show} \u2014 en \u00e7ok tekrar izlenen an. #Shorts #Dizi"
+        return f"{show} — en çok tekrar izlenen an.\n\n{hashtag_str}"
+
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -60,15 +71,16 @@ def build_description(job: dict, hotspot: dict) -> str:
             model="claude-sonnet-4-20250514",
             max_tokens=150,
             messages=[{"role": "user", "content": (
-                f"T\u00fcrk dizisi '{show}' i\u00e7in YouTube Shorts a\u00e7\u0131klamas\u0131 yaz.\n"
-                "Max 120 karakter, T\u00fcrk\u00e7e, spoiler verme, merak uyand\u0131r.\n"
-                "Sadece a\u00e7\u0131klama metnini yaz, ba\u015fka hi\u00e7bir \u015fey yazma."
+                f"Türk dizisi '{show}' için YouTube Shorts açıklaması yaz.\n"
+                "Max 120 karakter, Türkçe, spoiler verme, merak uyandır.\n"
+                "Sadece açıklama metnini yaz, başka hiçbir şey yazma."
             )}],
         )
-        return message.content[0].text.strip()
+        body = message.content[0].text.strip()
+        return f"{body}\n\n{hashtag_str}"
     except Exception as e:
         log.warning(f"Claude description failed: {e}")
-        return f"{show} \u2014 en \u00e7ok tekrar izlenen an. #Shorts #Dizi"
+        return f"{show} — en çok tekrar izlenen an.\n\n{hashtag_str}"
 
 
 def build_tags(job: dict) -> list[str]:

@@ -422,7 +422,7 @@ class ApprovalBot(discord.Client):
             return
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        log.debug(f"Reaction: {payload.emoji} from {payload.user_id} on {payload.message_id}")
+        log.info(f"Reaction: {payload.emoji} from {payload.user_id} on msg {payload.message_id} in channel {payload.channel_id}")
 
         # ── Soap clip approval (separate clips channel) ───────────────────────
         if payload.channel_id == SOAP_CLIPS_CHANNEL_ID:
