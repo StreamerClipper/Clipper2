@@ -529,6 +529,38 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
         log.error(f"Discord send failed: {e}")
         return None
 
+def generate_whisper_subtitles(video_path: Path, stem: Path) -> Path | None:
+    """
+    Generate subtitles using OpenAI Whisper when no official subs available.
+    Outputs a .vtt file at stem.vtt
+    """
+    try:
+        import subprocess
+        # Install whisper if not present
+        subprocess.run(
+            ["pip", "install", "openai-whisper", "--quiet"],
+            capture_output=True, timeout=120
+        )
+        out_vtt = Path(f"{stem}.vtt")
+        cmd = [
+            "whisper",
+            str(video_path),
+            "--language", "tr",        # Turkish
+            "--output_format", "vtt",
+            "--output_dir", str(stem.parent),
+            "--model", "medium",
+            "--task", "transcribe",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0 and out_vtt.exists():
+            log.info(f"Whisper generated subtitles: {out_vtt}")
+            return out_vtt
+        else:
+            log.warning(f"Whisper failed: {result.stderr[-200:]}")
+            return None
+    except Exception as e:
+        log.error(f"Whisper subtitle generation failed: {e}")
+        return None
 
 # =============================================================================
 # Process one hotspot
@@ -561,6 +593,12 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
         if fetched:
             fetched.rename(vtt_path)
+        elif mute:
+            # No subtitles available + muted — generate with Whisper
+            log.info("No subtitles found — generating with Whisper...")
+            generated = generate_whisper_subtitles(raw if raw.exists() else cropped, TMP_DIR / f"soap_{vid}_subs")
+            if generated:
+                generated.rename(vtt_path)
 
     if mute:
         muted = TMP_DIR / f"{slug}_muted.mp4"
