@@ -247,7 +247,7 @@ class ApprovalBot(discord.Client):
                 )
                 return
 
-            if content == "ret":
+            if content in ("ret", "res"):
                 pending_file = Path("output/soap_pending.jsonl")
                 processed_file = Path("output/soap_processed.jsonl")
 
