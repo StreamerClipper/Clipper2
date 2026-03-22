@@ -12,3 +12,7 @@ output/*.jsonl
 output/*.jsonl
 output/*.jsonl
 output/*.jsonl
+output/*.jsonl
+output/*.json
+output/*.txt
+output/clips/
