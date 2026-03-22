@@ -386,7 +386,7 @@ def burn_subtitles(input_path: Path, srt_path: Path, output_path: Path) -> bool:
         f":force_style='FontSize=18,Bold=1,"
         f"PrimaryColour=&H00FFFFFF,"
         f"OutlineColour=&H00000000,"
-        f"Outline=2,Shadow=1,MarginV=100'"
+        f"Outline=2,Shadow=1,MarginV=30'"
     )
     cmd = [
         "ffmpeg", "-y",
