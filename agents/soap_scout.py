@@ -106,10 +106,14 @@ def process_url(url: str) -> bool:
     with open(SOAP_PENDING_FILE, "a") as f:
         f.write(json.dumps(job) + "\n")
 
-    # Commit and push to trigger GitHub Actions
+    # Trigger GitHub Actions via a tracked trigger file
+    # (soap_pending.jsonl is gitignored so we can't commit it directly)
     cwd = Path("/home/StreamerClipper/clipbot")
     try:
-        subprocess.run(["git", "add", "output/soap_pending.jsonl"], cwd=cwd, check=True)
+        trigger = cwd / ".soap_trigger"
+        trigger.write_text(json.dumps({"url": url, "queued_at": job["queued_at"]}) + "\n")
+
+        subprocess.run(["git", "add", ".soap_trigger"], cwd=cwd, check=True)
         subprocess.run(["git", "commit", "-m", f"[soap] queue: {url}"], cwd=cwd, check=True)
         subprocess.run(["git", "stash"], cwd=cwd, check=False)
         subprocess.run(["git", "fetch", "origin", "main"], cwd=cwd, check=True)
