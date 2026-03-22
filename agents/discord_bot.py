@@ -426,6 +426,16 @@ class ApprovalBot(discord.Client):
 
         # ── Soap clip approval (separate clips channel) ───────────────────────
         if payload.channel_id == SOAP_CLIPS_CHANNEL_ID:
+            # Always pull latest so soap_discord_pending.jsonl is fresh
+            try:
+                import subprocess
+                subprocess.run(
+                    ["git", "pull", "origin", "main"],
+                    cwd=Path("/home/StreamerClipper/clipbot"),
+                    capture_output=True, timeout=15,
+                )
+            except Exception:
+                pass
             if payload.user_id == self.user.id:
                 return
             if self.owner_id and payload.user_id != self.owner_id:
