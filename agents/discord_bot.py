@@ -205,6 +205,9 @@ class ApprovalBot(discord.Client):
             import subprocess
             cwd = Path("/home/StreamerClipper/clipbot")
             subprocess.run(["git", "stash"], cwd=cwd, capture_output=True, timeout=15)
+            # Remove untracked files that block rebase (gitignored runtime files)
+            subprocess.run(["git", "clean", "-fd", "--dry-run"], cwd=cwd, capture_output=True, timeout=10)
+            subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=cwd, capture_output=True, timeout=10)
             result = subprocess.run(
                 ["git", "pull", "--rebase", "origin", "main"],
                 cwd=cwd, capture_output=True, text=True, timeout=30,
