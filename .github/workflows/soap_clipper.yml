@@ -69,12 +69,14 @@ jobs:
           ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m agents.soap_clipper
 
-      - name: Commit results
+       - name: Commit results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .soap_trigger output/soap_processed.jsonl \
-                  output/soap_discord_pending.jsonl output/clips/ || true
+          git add -f .soap_trigger output/soap_processed.jsonl \
+                  output/soap_discord_pending.jsonl || true
           git diff --staged --quiet || git commit -m "[soap-clipper] processed clips"
+          git stash || true
           git pull origin main --rebase --strategy-option=ours
+          git stash pop || true
           git push origin main
