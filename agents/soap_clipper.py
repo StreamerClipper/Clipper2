@@ -216,24 +216,27 @@ def download_segment(url: str, start: float, duration: int, out: Path) -> bool:
 # =============================================================================
 
 def fetch_subtitles(url: str, stem: Path) -> Path | None:
-    for lang in ("tr", "en", "en-US"):
-        cmd = [
-            "yt-dlp",
-            "--no-playlist",
-            "--skip-download",
-            "--no-warnings",
-            "--cookies", "cookies.txt",
-            "--write-auto-sub",
-            "--sub-lang", lang,
-            "--sub-format", "vtt",
-            "-o", str(stem),
-            url,
-        ]
-        subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        candidate = stem.parent / f"{stem.name}.{lang}.vtt"
-        if candidate.exists():
-            log.info(f"Subtitles fetched: {lang}")
-            return candidate
+    # Try official subtitles first, then auto-generated
+    for sub_type in ["--write-sub", "--write-auto-sub"]:
+        for lang in ("tr", "en", "en-US"):
+            cmd = [
+                "yt-dlp",
+                "--no-playlist",
+                "--skip-download",
+                "--no-warnings",
+                "--cookies", "cookies.txt",
+                sub_type,
+                "--sub-lang", lang,
+                "--sub-format", "vtt",
+                "-o", str(stem),
+                url,
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            candidate = stem.parent / f"{stem.name}.{lang}.vtt"
+            if candidate.exists():
+                log.info(f"Subtitles fetched: {lang} ({'official' if sub_type == '--write-sub' else 'auto-generated'})")
+                return candidate
+
     log.warning("No subtitles available")
     return None
 
