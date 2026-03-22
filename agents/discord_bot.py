@@ -35,6 +35,7 @@ REJECT  = "❌"
 SOAP_INPUT_CHANNEL_ID = 1484842601617293394   # you paste URLs here
 SOAP_LOG_CHANNEL_ID   = 1484834748181385256   # pipeline status / progress
 SOAP_CLIPS_CHANNEL_ID = 1484834736257106020   # clip approvals (✅ / ❌)
+TASK_STATUS_CHANNEL_ID = 1485241783746302072
 
 TITLE_TIMEOUT = 86400  # 24h
 
@@ -197,7 +198,9 @@ class ApprovalBot(discord.Client):
 
     async def on_ready(self):
         log.info(f"Discord bot ready — logged in as {self.user}")
+
         # Pull latest from GitHub so soap_discord_pending.jsonl is up to date
+        pull_ok = False
         try:
             import subprocess
             result = subprocess.run(
@@ -205,7 +208,8 @@ class ApprovalBot(discord.Client):
                 cwd=Path("/home/StreamerClipper/clipbot"),
                 capture_output=True, text=True, timeout=30,
             )
-            if result.returncode == 0:
+            pull_ok = result.returncode == 0
+            if pull_ok:
                 log.info("git pull OK")
             else:
                 log.warning(f"git pull failed: {result.stderr[:200]}")
@@ -226,12 +230,21 @@ class ApprovalBot(discord.Client):
                         try:
                             item = json.loads(line)
                             mid = int(item["message_id"])
-                            PENDING[mid] = item  # store full record including clip_path
+                            PENDING[mid] = item
                             log.info(f"Restored pending clip: message {mid}")
                         except Exception as e:
                             log.warning(f"Could not restore pending: {e}")
         else:
             log.error(f"Channel {self.channel_id} not found — check DISCORD_CHANNEL_ID")
+
+        # Notify tasks-status channel
+        status_channel = self.get_channel(TASK_STATUS_CHANNEL_ID)
+        if status_channel:
+            await status_channel.send(
+                f"✅ **ClipBot online** — `{self.user}`\n"
+                f"Watching Kick clips + Soap approvals.\n"
+                f"git pull: {'✅ OK' if pull_ok else '⚠️ failed'}"
+            )
 
     async def on_message(self, message: discord.Message):
         """Handle !hype and !soap commands."""
