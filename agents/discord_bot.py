@@ -555,6 +555,19 @@ def main():
         except (OSError, ValueError):
             pid_file.unlink(missing_ok=True)
 
+    # ← EVERYTHING BELOW IS MISSING!
+    pid_file.write_text(str(os.getpid()))
+
+    token = settings.DISCORD_BOT_TOKEN
+    if not token:
+        log.error("DISCORD_BOT_TOKEN not set in .env")
+        return
+    log.info("Starting Discord approval bot...")
+    try:
+        bot = ApprovalBot()
+        bot.run(token, log_handler=None)
+    finally:
+        pid_file.unlink(missing_ok=True)
 
 if __name__ == "__main__":
     main()
