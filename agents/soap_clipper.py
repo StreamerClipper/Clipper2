@@ -357,12 +357,14 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
 
 
 def mute_audio(input_path: Path, output_path: Path) -> bool:
-    """Strip audio track to avoid copyright claims."""
+    """Strip audio and mirror video to avoid Content ID matching."""
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_path),
-        "-an",
-        "-c:v", "copy",
+        "-an",                          # remove audio
+        "-vf", "hflip",                 # mirror horizontally — breaks Content ID
+        "-c:v", "libx264",
+        "-preset", "fast",
         str(output_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -615,10 +617,16 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
                 vtt_path = generated
                 whisper_subs = True
 
-    # Burn subtitles
+    # Burn subtitles AFTER mute/flip so text isn't mirrored
+    if mute:
+        muted = TMP_DIR / f"{slug}_muted.mp4"
+        mute_audio(cropped, muted)
+        cropped.unlink(missing_ok=True)
+        cropped = muted
+
+    # Now burn subtitles (text will be correct orientation)
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
-        # Whisper subs from cropped clip are already 0-based — no offset needed
         offset = 0.0 if whisper_subs else max(0.0, start)
         has_subs = shift_subtitles_to_srt(vtt_path, offset, srt_path)
         if has_subs:
@@ -626,14 +634,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
             burn_subtitles(cropped, srt_path, subbed)
             cropped.unlink(missing_ok=True)
             srt_path.unlink(missing_ok=True)
-            cropped = subbed  # now subtitled, still has audio
-
-    ## Mute AFTER subtitles are burned in
-    if mute:
-        muted = TMP_DIR / f"{slug}_muted.mp4"
-        mute_audio(cropped, muted)
-        cropped.unlink(missing_ok=True)
-        cropped = muted
+            cropped = subbed
 
     shutil.move(str(cropped), str(final))
     log.info(f"Clip ready: {final}")
