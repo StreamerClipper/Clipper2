@@ -474,14 +474,28 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
         return None
 
     clip_path = compress_for_discord(clip_path)
-
     intensity_pct = int(hotspot["intensity"] * 100)
+
+    record = {
+        "clip_path":  str(clip_path),
+        "job": {
+            "url":      job["url"],
+            "title":    job["title"],
+            "video_id": job["video_id"],
+            "mute":     job.get("mute", False),
+        },
+        "hotspot":    hotspot,
+        "clip_index": clip_index,
+        "type":       "soap_short",
+    }
+
     content = (
         f"📺 **[Soap Shorts]** Clip {clip_index+1}/3 ready for approval\n\n"
         f"**Episode:** {job['title']}\n"
         f"**Timestamp:** `{ts_label(hotspot['start_sec'])}` — `{ts_label(hotspot['end_sec'])}`\n"
         f"**Most Replayed intensity:** `{intensity_pct}%`\n\n"
-        f"React with ✅ to upload to YouTube Shorts, or ❌ to discard."
+        f"React with ✅ to upload to YouTube Shorts, or ❌ to discard.\n"
+        f"||`RECORD:{json.dumps(record, separators=(',', ':'))}`||"
     )
 
     try:
@@ -511,18 +525,7 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
             requests.put(react_url, headers=headers, timeout=5)
             time.sleep(0.5)
 
-        record = {
-            "message_id": message_id,
-            "clip_path":  str(clip_path),
-            "job":        {k: v for k, v in job.items() if k != "heatmap"},
-            "hotspot":    hotspot,
-            "clip_index": clip_index,
-            "type":       "soap_short",
-        }
-        SOAP_DISCORD_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(SOAP_DISCORD_FILE, "a") as f:
-            f.write(json.dumps(record) + "\n")
-
+        # Record is embedded in Discord message — no file needed
         return message_id
 
     except Exception as e:

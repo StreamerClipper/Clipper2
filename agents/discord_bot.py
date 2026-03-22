@@ -435,45 +435,6 @@ class ApprovalBot(discord.Client):
 
         # ── Soap clip approval (separate clips channel) ───────────────────────
         if payload.channel_id == SOAP_CLIPS_CHANNEL_ID:
-            # Always pull latest so soap_discord_pending.jsonl is fresh
-            # Fetch new records from GitHub without overwriting local removals
-            try:
-                import subprocess
-                cwd = Path("/home/StreamerClipper/clipbot")
-                soap_path_local = Path("output/soap_discord_pending.jsonl")
-
-                # Fetch remote
-                subprocess.run(["git", "fetch", "origin", "main"],
-                    cwd=cwd, capture_output=True, timeout=15)
-
-                # Get remote records
-                result = subprocess.run(
-                    ["git", "show", "origin/main:output/soap_discord_pending.jsonl"],
-                    cwd=cwd, capture_output=True, text=True, timeout=10)
-
-                if result.returncode == 0:
-                    # Merge: keep local records + add any new remote ones
-                    local_ids = set()
-                    local_lines = []
-                    if soap_path_local.exists():
-                        for l in soap_path_local.read_text().strip().splitlines():
-                            if l.strip():
-                                local_lines.append(l)
-                                try:
-                                    local_ids.add(json.loads(l)["message_id"])
-                                except Exception:
-                                    pass
-                    for l in result.stdout.strip().splitlines():
-                        if l.strip():
-                            try:
-                                if json.loads(l)["message_id"] not in local_ids:
-                                    local_lines.append(l)
-                            except Exception:
-                                pass
-                    soap_path_local.write_text("\n".join(local_lines) + "\n" if local_lines else "")
-                    log.info(f"Pending file synced: {len(local_lines)} records")
-            except Exception as e:
-                log.warning(f"Pending sync error: {e}")
             if payload.user_id == self.user.id:
                 return
             if self.owner_id and payload.user_id != self.owner_id:
@@ -483,29 +444,40 @@ class ApprovalBot(discord.Client):
             if emoji not in (APPROVE, REJECT):
                 return
 
-            message_id  = payload.message_id
-            soap_record = None
-            soap_path   = Path("output/soap_discord_pending.jsonl")
-
-            if soap_path.exists():
-                for line in soap_path.read_text().strip().splitlines():
-                    try:
-                        item = json.loads(line)
-                        if str(item.get("message_id")) == str(message_id):
-                            soap_record = item
-                            break
-                    except Exception:
-                        pass
-
-            if not soap_record:
-                return
-
             clips_channel = self.get_channel(SOAP_CLIPS_CHANNEL_ID)
             log_channel   = self.get_channel(SOAP_LOG_CHANNEL_ID)
-            message_obj   = await clips_channel.fetch_message(message_id)
+            message_obj   = await clips_channel.fetch_message(payload.message_id)
+
+            # Read record directly from Discord message — no file/git sync needed
+            import re
+            soap_record = None
+            try:
+                match = re.search(r'\|\|`RECORD:(.+?)`\|\|', message_obj.content, re.DOTALL)
+                if match:
+                    soap_record = json.loads(match.group(1))
+                    soap_record["message_id"] = payload.message_id
+                    log.info(f"Record extracted from Discord message {payload.message_id}")
+                else:
+                    # Fallback to pending file for old-style messages
+                    soap_path = Path("output/soap_discord_pending.jsonl")
+                    if soap_path.exists():
+                        for line in soap_path.read_text().strip().splitlines():
+                            try:
+                                item = json.loads(line)
+                                if str(item.get("message_id")) == str(payload.message_id):
+                                    soap_record = item
+                                    log.info(f"Record found in pending file")
+                                    break
+                            except Exception:
+                                pass
+            except Exception as e:
+                log.error(f"Failed to read record from message: {e}")
+
+            if not soap_record:
+                log.warning(f"No record found for message {payload.message_id}")
+                return
 
             if emoji == REJECT:
-                Path(soap_record.get("clip_path", "")).unlink(missing_ok=True)
                 await message_obj.reply("❌ Soap clip discarded.")
                 await asyncio.sleep(3)
                 await message_obj.delete()
@@ -523,19 +495,13 @@ class ApprovalBot(discord.Client):
                         await clips_channel.send(f"🎬 **Soap Short uploaded!** {yt_url}")
                         if log_channel:
                             await log_channel.send(f"✅ Clip {soap_record.get('clip_index', 0)+1} uploaded: {yt_url}")
-                        await asyncio.sleep(3)       # ← add this
-                        await message_obj.delete()   # ← add this
+                        await asyncio.sleep(3)
+                        await message_obj.delete()
                     else:
                         await clips_channel.send("❌ YouTube upload failed — check logs.")
                 except Exception as e:
                     await clips_channel.send(f"❌ Upload error: `{e}`")
 
-            # Remove from soap pending file
-            remaining = [
-                l for l in soap_path.read_text().strip().splitlines()
-                if l.strip() and str(message_id) not in l
-            ]
-            soap_path.write_text("\n".join(remaining) + "\n" if remaining else "")
             return  # do NOT fall through to Kick clip handling
         # ── End soap reaction block ───────────────────────────────────────────
 
