@@ -203,11 +203,13 @@ class ApprovalBot(discord.Client):
         pull_ok = False
         try:
             import subprocess
+            cwd = Path("/home/StreamerClipper/clipbot")
+            subprocess.run(["git", "stash"], cwd=cwd, capture_output=True, timeout=15)
             result = subprocess.run(
                 ["git", "pull", "--rebase", "origin", "main"],
-                cwd=Path("/home/StreamerClipper/clipbot"),
-                capture_output=True, text=True, timeout=30,
+                cwd=cwd, capture_output=True, text=True, timeout=30,
             )
+            subprocess.run(["git", "stash", "pop"], cwd=cwd, capture_output=True, timeout=15)
             pull_ok = result.returncode == 0
             if pull_ok:
                 log.info("git pull OK")
