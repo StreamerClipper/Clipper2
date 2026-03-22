@@ -19,7 +19,7 @@ log = logging.getLogger("youtube")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN", "")
-PLAYLIST_NAME = "Kick Clips"
+PLAYLIST_NAME = "Diziler"
 
 
 def get_youtube_client():
@@ -114,11 +114,7 @@ def upload_to_youtube(
 
         # Build description with hashtags
         hashtag_str = " ".join(hashtags) if hashtags else ""
-        full_description = (
-            f"{description}\n\n"
-            f"{hashtag_str}\n\n"
-            f"#Shorts #Kick #Gaming"
-        ).strip()
+        full_description = f"{description}".strip()
 
         log.info(f"Uploading to YouTube: {title}")
 

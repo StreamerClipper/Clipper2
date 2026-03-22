@@ -58,8 +58,11 @@ def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
 def build_description(job: dict, hotspot: dict) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     show    = _strip_episode(job.get("title", "Dizi"))
-    tags    = build_tags(job)
-    hashtag_str = " ".join(f"#{t.lstrip('#')}" for t in tags)
+    tags = build_tags(job)
+    # Format each tag as a proper hashtag
+    hashtag_str = " ".join(
+        f"#{t.lstrip('#').replace(' ', '')}" for t in tags
+    )
 
     if not api_key:
         return f"{show} — en çok tekrar izlenen an.\n\n{hashtag_str}"
