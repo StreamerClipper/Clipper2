@@ -399,7 +399,7 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
             f"fade=t=in:st=0:d=0.2:alpha=0,"
             f"fade=t=out:st=2.8:d=0.4:alpha=0,"
             f"colorkey=black:0.12:0.03[cta];"
-            f"[transformed][cta]overlay=0:50:enable='between(t,0,3.5)'[outv]"
+            f"[transformed][cta]overlay=0:150:enable='between(t,0,3.5)'[outv]"
         )
         if mute:
             cmd = [
@@ -566,8 +566,8 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Glow,Arial,46,&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00FFFFFF,1,0,0,0,100,100,0,0,1,4,0,2,20,20,220,1
-Style: Main,Arial,46,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,20,20,220,1
+Style: Glow,Arial,48,&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00FFFFFF,1,0,0,0,100,100,0,0,1,4,0,2,20,20,330,1
+Style: Main,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,20,20,330,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
