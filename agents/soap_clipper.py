@@ -372,7 +372,7 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
     cta_path = Path(__file__).parent.parent / "abone_ol.mp4"
     has_cta  = cta_path.exists()
 
-    audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.1"
+    audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.2"
     video_filter = (
         "hflip,"
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
