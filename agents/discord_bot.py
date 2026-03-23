@@ -351,6 +351,20 @@ class ApprovalBot(discord.Client):
         if message.channel.id != self.channel_id:
             return
 
+        # clip char <url> <character>
+        if content.startswith("clip char "):
+            parts = content.split()
+            if len(parts) >= 4:
+                char_url  = parts[2]
+                character = parts[3]
+                await message.channel.send(f"🎬 Queuing character highlight for `{character}`...")
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, queue_character_clip, char_url, character)
+            else:
+                await message.channel.send("Usage: `clip char <url> <character>`\nExample: `clip char https://youtube.com/... sila_turkoglu`")
+            return
+
+
         # !hype status — show current settings
         if content == "!hype status":
             env_path = Path(".env")

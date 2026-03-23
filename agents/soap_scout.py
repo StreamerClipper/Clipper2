@@ -203,6 +203,37 @@ def poll_playlist(playlist_url: str):
 
         time.sleep(POLL_INTERVAL)
 
+def queue_character_clip(url: str, character: str):
+    """Write .character_trigger and push to GitHub to trigger character_clipper workflow."""
+    import json, subprocess
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    trigger = Path(".character_trigger")
+    data = {
+        "url":       url,
+        "character": character,
+        "title":     url,
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+        "ts":        datetime.now(timezone.utc).timestamp(),
+    }
+    trigger.write_text(json.dumps(data))
+
+    try:
+        subprocess.run(["git", "stash"], capture_output=True)
+        subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True)
+        subprocess.run(["git", "stash", "pop"], capture_output=True)
+        subprocess.run(["git", "add", "-f", ".character_trigger"], capture_output=True)
+        subprocess.run(["git", "commit", "-m", f"[character] queue: {url} ({character})"], capture_output=True)
+        for _ in range(3):
+            result = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+            if result.returncode == 0:
+                log.info(f"Character job queued: {character} — {url}")
+                return
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True)
+        log.error("Character git push failed after 3 retries")
+    except Exception as e:
+        log.error(f"queue_character_clip failed: {e}")
 
 # =============================================================================
 # Main

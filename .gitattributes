@@ -1,1 +1,3 @@
 .soap_trigger merge=ours
+echo ".character_trigger merge=ours" >> ~/clipbot/.gitattributes
+.character_trigger merge=ours
