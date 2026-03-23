@@ -1,0 +1,37 @@
+name: Character Clipper
+
+on:
+  push:
+    paths:
+      - '.character_trigger'
+
+jobs:
+  clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          pip install requests python-dotenv \
+            google-api-python-client google-auth-oauthlib \
+            insightface onnxruntime opencv-python-headless \
+            numpy pillow
+
+      - name: Run character clipper
+        env:
+          DISCORD_BOT_TOKEN:    ${{ secrets.DISCORD_BOT_TOKEN }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          SOAP_YOUTUBE_CLIENT_ID:      ${{ secrets.SOAP_YOUTUBE_CLIENT_ID }}
+          SOAP_YOUTUBE_CLIENT_SECRET:  ${{ secrets.SOAP_YOUTUBE_CLIENT_SECRET }}
+          SOAP_YOUTUBE_REFRESH_TOKEN:  ${{ secrets.SOAP_YOUTUBE_REFRESH_TOKEN }}
+        run: python -m agents.character_clipper
