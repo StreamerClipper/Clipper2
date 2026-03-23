@@ -358,15 +358,19 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
 
 def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> bool:
     """
-    Apply Content ID bypass transformations:
+    Apply Content ID bypass transformations + CTA overlay:
     - Mirror horizontally
     - Slight zoom punch
     - Saturation + brightness shift
     - Vignette (dark corners)
     - 1.2x speed
-    - Subtle audio echo (voice character change)
+    - Subtle audio echo
+    - Abone Ol CTA overlay for first 3.5s
     - Optionally mute audio
     """
+    cta_path = Path("/home/StreamerClipper/clipbot/abone_ol.mp4")
+    has_cta  = cta_path.exists()
+
     audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.4"
     video_filter = (
         "hflip,"
@@ -376,25 +380,60 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
         "setpts=PTS/1.2"
     )
 
-    if mute:
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
-            "-vf", video_filter,
-            "-an",
-            "-c:v", "libx264", "-preset", "fast",
-            str(output_path),
-        ]
+    if has_cta:
+        # Add CTA overlay on top of all other transforms
+        filter_complex = (
+            f"[0:v]{video_filter}[transformed];"
+            f"[1:v]scale=608:280,"
+            f"fade=t=in:st=0:d=0.2:alpha=0,"
+            f"fade=t=out:st=2.8:d=0.4:alpha=0,"
+            f"colorkey=black:0.12:0.03[cta];"
+            f"[transformed][cta]overlay=0:50:enable='between(t,0,3.5)'[outv]"
+        )
+        if mute:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_path),
+                "-i", str(cta_path),
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
+                "-an",
+                "-c:v", "libx264", "-preset", "fast",
+                str(output_path),
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_path),
+                "-i", str(cta_path),
+                "-filter_complex", filter_complex,
+                "-map", "[outv]", "-map", "0:a",
+                "-af", audio_filter,
+                "-c:v", "libx264", "-preset", "fast",
+                "-c:a", "aac", "-b:a", "128k",
+                str(output_path),
+            ]
     else:
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
-            "-vf", video_filter,
-            "-af", audio_filter,
-            "-c:v", "libx264", "-preset", "fast",
-            "-c:a", "aac", "-b:a", "128k",
-            str(output_path),
-        ]
+        log.warning("abone_ol.mp4 not found — skipping CTA overlay")
+        if mute:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_path),
+                "-vf", video_filter,
+                "-an",
+                "-c:v", "libx264", "-preset", "fast",
+                str(output_path),
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(input_path),
+                "-vf", video_filter,
+                "-af", audio_filter,
+                "-c:v", "libx264", "-preset", "fast",
+                "-c:a", "aac", "-b:a", "128k",
+                str(output_path),
+            ]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
