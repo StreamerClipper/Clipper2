@@ -183,12 +183,35 @@ def handle_approval(record: dict) -> str | None:
     clip_number = raw_index if raw_index >= 1 else raw_index + 1
     tmp_path = Path(f"/tmp/soap_clip_{record['message_id']}.mp4")
     if not tmp_path.exists():
-        log.info("Clip not on disk \u2014 downloading from Discord attachment...")
+        log.info("Clip not on disk — downloading from Discord attachment...")
         if not download_from_discord(str(record["message_id"]), tmp_path):
             return None
+
     title       = build_title(job, hotspot, clip_index=clip_number)
     description = build_description(job, hotspot)
     tags        = build_tags(job)
+
+    # Post to staging channel for Instagram/TikTok
+    staging_channel_id = "1485720642660598001"
+    staging_content = (
+        f"📲 **Ready for Instagram & TikTok**\n\n"
+        f"**Title:**\n```{title}```\n\n"
+        f"**Hashtags:**\n```{description.split(chr(10))[-1]}```\n\n"
+        f"⬇️ Download the video and upload manually."
+    )
+    try:
+        with open(tmp_path, "rb") as f:
+            requests.post(
+                f"https://discord.com/api/v10/channels/{staging_channel_id}/messages",
+                headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"},
+                files={"file": (tmp_path.name, f, "video/mp4")},
+                data={"content": staging_content},
+                timeout=120,
+            )
+        log.info("Clip posted to staging channel")
+    except Exception as e:
+        log.warning(f"Staging post failed: {e}")
+
     log.info(f"Uploading: {title}")
     try:
         video_id = upload_to_youtube(tmp_path, title, description, tags)
