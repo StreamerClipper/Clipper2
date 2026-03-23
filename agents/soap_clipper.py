@@ -311,8 +311,9 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
                 # Parse timestamps
                 start_ts = match.group(1).replace(",", ".")
                 end_ts   = match.group(2).replace(",", ".")
-                start_s  = vtt_time_to_seconds(start_ts) - start_sec
-                end_s    = vtt_time_to_seconds(end_ts) - start_sec
+                SPEED = 1.2
+                start_s  = (vtt_time_to_seconds(start_ts) - start_sec) / SPEED
+                end_s    = (vtt_time_to_seconds(end_ts) - start_sec) / SPEED
 
                 # Skip subtitles outside our clip window
                 if end_s < 0 or start_s > CLIP_DURATION:
@@ -368,7 +369,7 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
     - Abone Ol CTA overlay for first 3.5s
     - Optionally mute audio
     """
-    cta_path = Path("/home/StreamerClipper/clipbot/abone_ol.mp4")
+    cta_path = Path(__file__).parent.parent / "abone_ol.mp4"
     has_cta  = cta_path.exists()
 
     audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.4"
