@@ -335,12 +335,23 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path, spee
                     i += 1
 
                 if sub_lines:
-                    srt_entries.append(
-                        f"{counter}\n"
-                        f"{seconds_to_srt_time(start_s)} --> {seconds_to_srt_time(end_s)}\n"
-                        f"{chr(10).join(sub_lines)}\n"
-                    )
-                    counter += 1
+                    # Split long subtitles into max 4 words per entry
+                    full_text = " ".join(sub_lines)
+                    words = full_text.split()
+                    MAX_WORDS = 4
+                    chunks = [words[i:i+MAX_WORDS] for i in range(0, len(words), MAX_WORDS)]
+                    duration = end_s - start_s
+                    chunk_duration = duration / len(chunks)
+
+                    for j, chunk in enumerate(chunks):
+                        chunk_start = start_s + j * chunk_duration
+                        chunk_end   = chunk_start + chunk_duration
+                        srt_entries.append(
+                            f"{counter}\n"
+                            f"{seconds_to_srt_time(chunk_start)} --> {seconds_to_srt_time(chunk_end)}\n"
+                            f"{' '.join(chunk)}\n"
+                        )
+                        counter += 1
             else:
                 i += 1
 
@@ -485,24 +496,64 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
 # =============================================================================
 
 def burn_subtitles(input_path: Path, srt_path: Path, output_path: Path) -> bool:
-    safe_sub = str(srt_path).replace("\\", "/").replace(":", "\\:")
-    vf = (
-        f"subtitles='{safe_sub}'"
-        f":force_style='FontSize=14,Bold=1,"
-        f"PrimaryColour=&H00FFFFFF,"
-        f"OutlineColour=&H00000000,"
-        f"Outline=2,Shadow=1,MarginV=30'"
-    )
+    """Burn subtitles with white glow effect using two-layer ASS format."""
+
+    # Convert SRT to two-layer ASS for glow effect
+    ass_path = srt_path.with_suffix('.ass')
+    try:
+        srt_text = srt_path.read_text(encoding='utf-8')
+        entries = []
+        for block in srt_text.strip().split('\n\n'):
+            lines = block.strip().splitlines()
+            if len(lines) < 3:
+                continue
+            times = lines[1]
+            text  = ' '.join(lines[2:])
+            start, end = times.split(' --> ')
+            # Convert SRT time to ASS time (00:00:01,000 -> 0:00:01.00)
+            def srt_to_ass(t):
+                t = t.strip().replace(',', '.')
+                h, m, s = t.split(':')
+                s = float(s)
+                return f"{int(h)}:{int(m):02d}:{s:05.2f}"
+            entries.append((srt_to_ass(start), srt_to_ass(end), text))
+
+        ass_content = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 608
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Glow,Arial,28,&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00FFFFFF,1,0,0,0,100,100,0,0,1,4,0,2,20,20,60,1
+Style: Main,Arial,28,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,20,20,60,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+        for start, end, text in entries:
+            ass_content += f"Dialogue: 0,{start},{end},Glow,,0,0,0,,{{\\blur8}}{text}\n"
+            ass_content += f"Dialogue: 1,{start},{end},Main,,0,0,0,,{text}\n"
+
+        ass_path.write_text(ass_content, encoding='utf-8')
+
+    except Exception as e:
+        log.error(f"ASS conversion failed: {e}")
+        shutil.copy(input_path, output_path)
+        return True
+
+    safe_ass = str(ass_path).replace("\\", "/").replace(":", "\\:")
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_path),
-        "-vf", vf,
+        "-vf", f"ass='{safe_ass}'",
         "-c:v", "libx264",
         "-c:a", "aac",
         "-preset", "fast",
         str(output_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    ass_path.unlink(missing_ok=True)
     if result.returncode != 0:
         log.warning(f"Subtitle burn failed — using clip without subtitles: {result.stderr[-300:]}")
         shutil.copy(input_path, output_path)
