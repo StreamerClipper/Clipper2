@@ -284,7 +284,7 @@ def seconds_to_srt_time(s: float) -> str:
     return f"{h:02d}:{m:02d}:{int(sec):02d},{ms:03d}"
 
 
-def     shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path, speed: float = 1.0, whisper_offset: float = 0.0) -> bool:
+def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path, speed: float = 1.0, delay: float = 0.0) -> bool:
     """
     Convert VTT to SRT and shift all timestamps back by start_sec.
     This aligns subtitles with the clipped segment (which starts at 0s).
@@ -311,9 +311,8 @@ def     shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path, 
                 # Parse timestamps
                 start_ts = match.group(1).replace(",", ".")
                 end_ts   = match.group(2).replace(",", ".")
-                SPEED = 1.2
-                start_s  = (vtt_time_to_seconds(start_ts) - start_sec) / speed + whisper_offset
-                end_s    = (vtt_time_to_seconds(end_ts) - start_sec) / speed + whisper_offset
+                start_s  = (vtt_time_to_seconds(start_ts) - start_sec) / speed + delay
+                end_s    = (vtt_time_to_seconds(end_ts) - start_sec) / speed + delay
 
                 # Skip subtitles outside our clip window
                 if end_s < 0 or start_s > CLIP_DURATION:
@@ -746,7 +745,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         has_subs = shift_subtitles_to_srt(
             vtt_path, offset, srt_path,
             speed=1.2 if whisper_subs else 1.0,
-            whisper_offset=0.0
+            delay=0.0 if whisper_subs else -2.0
         )
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
