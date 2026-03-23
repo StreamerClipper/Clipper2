@@ -332,14 +332,16 @@ class ApprovalBot(discord.Client):
                 )
                 return
 
-            if content in ("!soap", "!soap help"):
+            if content == "!hype":
                 await message.channel.send(
-                    "**Soap Shorts Commands:**\n"
-                    "`clip <youtube-url>` — queue an episode for clipping\n"
-                    "`clip mute <youtube-url>` — queue with audio muted (copyright safe)\n"
-                    "`!soap status` — show pending jobs\n\n"
-                    "Clips appear in <#1484834736257106020> with ✅/❌ buttons.\n"
-                    "✅ uploads to YouTube Shorts · ❌ discards"
+                    "**Hype Commands:**\n"
+                    "`!hype status` — show current settings\n"
+                    "`!hype set HYPE_THRESHOLD 45` — change threshold\n"
+                    "`!hype set HYPE_WINDOW_SECONDS 10` — change window\n"
+                    "`!hype set HYPE_COOLDOWN_SECONDS 120` — change cooldown\n\n"
+                    "**Scout Commands:**\n"
+                    "`!kick pause` — pause stream monitoring\n"
+                    "`!kick resume` — resume stream monitoring"
                 )
 
             return  # ignore anything else in the soap input channel
@@ -430,6 +432,28 @@ class ApprovalBot(discord.Client):
                 "⚠️ Scout restart flag set — but you need to manually restart "
                 "the Scout always-on task on PythonAnywhere.\n"
                 "Go to **Tasks** and click **Restart**."
+            )
+            return
+
+        # !kick pause — stop the scout
+        if content == "!kick pause":
+            Path("/tmp/pause_scout.flag").touch()
+            await message.channel.send(
+                "⏸️ **Kick Scout paused** — no new streams will be monitored.\n"
+                "Use `!kick resume` to restart."
+            )
+            return
+
+        # !kick resume — restart the scout
+        if content == "!kick resume":
+            Path("/tmp/pause_scout.flag").unlink(missing_ok=True)
+            import subprocess
+            subprocess.Popen(
+                [sys.executable, "-m", "agents.scout"],
+                cwd=Path(".").resolve(),
+            )
+            await message.channel.send(
+                "▶️ **Kick Scout resumed** — monitoring streams again."
             )
             return
 

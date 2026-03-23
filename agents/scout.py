@@ -601,6 +601,12 @@ class KickChatScout:
 async def run_channel(channel: str):
     """Run scout for a single channel with auto-reconnect."""
     while True:
+        # Check for pause flag
+        if Path("/tmp/pause_scout.flag").exists():
+            log.info(f"[{channel}] Scout paused — waiting...")
+            await asyncio.sleep(30)
+            continue
+
         scout = KickChatScout(channel)
         try:
             await scout.run()
@@ -612,7 +618,6 @@ async def run_channel(channel: str):
             discord_log(f"⚠️ **#{channel} scout crashed** — reconnecting in 30s...\n`{e}`")
             scout_log(f"⚠️ **#{channel}** scout crashed — reconnecting in 30s...")
             scout.cleanup()
-
         await asyncio.sleep(30)
 
 
@@ -631,6 +636,7 @@ async def main(channels: list[str], debug: bool = False):
 
     # Run all channels concurrently
     await asyncio.gather(*[run_channel(ch) for ch in channels])
+
 
 
 if __name__ == "__main__":
