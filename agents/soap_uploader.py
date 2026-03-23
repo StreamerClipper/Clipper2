@@ -162,7 +162,7 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
     youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
     body = {
         "snippet": {"title": title, "description": description, "tags": tags, "categoryId": "24", "defaultLanguage": "tr"},
-        "status": {"privacyStatus": os.getenv("YT_UPLOAD_PRIVACY", "public"), "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": os.getenv("YT_UPLOAD_PRIVACY", "private"), "selfDeclaredMadeForKids": False},
     }
     media = MediaFileUpload(str(clip_path), mimetype="video/mp4", resumable=True, chunksize=10*1024*1024)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
