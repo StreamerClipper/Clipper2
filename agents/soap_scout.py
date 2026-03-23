@@ -128,7 +128,15 @@ def process_url(url: str, mute: bool = False) -> bool:
         subprocess.run(["git", "fetch", "origin", "main"], cwd=cwd, check=True)
         subprocess.run(["git", "rebase", "origin/main"], cwd=cwd, check=True)
         subprocess.run(["git", "stash", "pop"], cwd=cwd, check=False)
-        subprocess.run(["git", "push", "origin", "main"], cwd=cwd, check=True)
+        # Retry push up to 3 times in case Actions pushed between our rebase and push
+        for attempt in range(3):
+            result = subprocess.run(["git", "push", "origin", "main"], cwd=cwd, capture_output=True)
+            if result.returncode == 0:
+                break
+            log.warning(f"Push attempt {attempt+1} failed — pulling and retrying...")
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=cwd, capture_output=True)
+        else:
+            raise subprocess.CalledProcessError(1, "git push")
         log.info("Pushed to GitHub — Actions triggered")
         discord_log(
             f"📋 **[Soap]** Episode queued — fetching hotspots and generating clips in GitHub Actions...\n`{url}`",
