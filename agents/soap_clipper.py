@@ -450,6 +450,34 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
     if result.returncode != 0:
         log.warning(f"Transform failed — using original: {result.stderr[-200:]}")
         shutil.copy(input_path, output_path)
+        return True
+    # Mix in background music if available
+    music_path = Path(__file__).parent.parent / "drama_sfx.mp3"
+    if music_path.exists():
+        music_out = output_path.with_suffix('.music.mp4')
+        music_cmd = [
+            "ffmpeg", "-y",
+            "-i", str(output_path),
+            "-stream_loop", "-1", "-i", str(music_path),
+            "-filter_complex",
+            "[0:a]volume=1.0[dialogue];"
+            "[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st=40:d=3[music];"
+            "[dialogue][music]amix=inputs=2:duration=first[outa]",
+            "-map", "0:v", "-map", "[outa]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+            str(music_out),
+        ]
+        res = subprocess.run(music_cmd, capture_output=True, text=True, timeout=120)
+        if res.returncode == 0:
+            output_path.unlink(missing_ok=True)
+            music_out.rename(output_path)
+            log.info("Background music mixed in")
+        else:
+            music_out.unlink(missing_ok=True)
+            log.warning(f"Music mix failed: {res.stderr[-200:]}")
+    else:
+        log.warning("drama_sfx.mp3 not found — skipping background music")
+
     return True
 
 # =============================================================================
