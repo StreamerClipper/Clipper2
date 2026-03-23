@@ -525,8 +525,8 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Glow,Arial,28,&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00FFFFFF,1,0,0,0,100,100,0,0,1,4,0,2,20,20,60,1
-Style: Main,Arial,28,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,20,20,60,1
+Style: Glow,Arial,36,&H00FFFFFF,&H000000FF,&H00FFFFFF,&H00FFFFFF,1,0,0,0,100,100,0,0,1,4,0,2,20,20,100,1
+Style: Main,Arial,36,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,20,20,100,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -746,7 +746,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         has_subs = shift_subtitles_to_srt(
             vtt_path, offset, srt_path,
             speed=1.2,
-            whisper_offset=1.0 if whisper_subs else 0.0
+            whisper_offset=0.0
         )
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
