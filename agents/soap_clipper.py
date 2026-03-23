@@ -356,20 +356,49 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path) -> b
         return False
 
 
-def mute_audio(input_path: Path, output_path: Path) -> bool:
-    """Strip audio and mirror video to avoid Content ID matching."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-an",                          # remove audio
-        "-vf", "hflip",                 # mirror horizontally — breaks Content ID
-        "-c:v", "libx264",
-        "-preset", "fast",
-        str(output_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> bool:
+    """
+    Apply Content ID bypass transformations:
+    - Mirror horizontally
+    - Slight zoom punch
+    - Saturation + brightness shift
+    - Vignette (dark corners)
+    - 1.2x speed
+    - Subtle audio echo (voice character change)
+    - Optionally mute audio
+    """
+    audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.4"
+    video_filter = (
+        "hflip,"
+        "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
+        "eq=saturation=1.15:brightness=0.02,"
+        "vignette=PI/4,"
+        "setpts=PTS/1.2"
+    )
+
+    if mute:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-vf", video_filter,
+            "-an",
+            "-c:v", "libx264", "-preset", "fast",
+            str(output_path),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-vf", video_filter,
+            "-af", audio_filter,
+            "-c:v", "libx264", "-preset", "fast",
+            "-c:a", "aac", "-b:a", "128k",
+            str(output_path),
+        ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
-        log.warning(f"Mute failed — keeping audio: {result.stderr[-200:]}")
+        log.warning(f"Transform failed — using original: {result.stderr[-200:]}")
         shutil.copy(input_path, output_path)
     return True
 
@@ -584,25 +613,22 @@ def generate_whisper_subtitles(video_path: Path, stem: Path) -> Path | None:
 def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     CLIPS_DIR.mkdir(parents=True, exist_ok=True)
-
     vid   = job["video_id"]
     slug  = f"soap_{vid}_clip{clip_index}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
     url   = job["url"]
     start = hotspot["start_sec"]
-    mute    = job.get("mute", False)
-
+    mute  = job.get("mute", False)
     raw     = TMP_DIR / f"{slug}_raw.mp4"
     cropped = TMP_DIR / f"{slug}_cropped.mp4"
     final   = CLIPS_DIR / f"{slug}_final.mp4"
 
     if not download_segment(url, start, CLIP_DURATION, raw):
         return None
-
     if not crop_to_vertical(raw, cropped):
         return None
     raw.unlink(missing_ok=True)
 
-    # Generate/fetch subtitles BEFORE muting (Whisper needs audio)
+    # Generate/fetch subtitles BEFORE transform (Whisper needs audio)
     vtt_path = TMP_DIR / f"soap_{vid}_subs.vtt"
     whisper_subs = False
     if not vtt_path.exists():
@@ -610,21 +636,19 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         if fetched:
             fetched.rename(vtt_path)
         elif mute:
-            # No official subs — generate with Whisper from cropped clip (has audio)
-            log.info("No subtitles found — generating with Whisper from cropped clip...")
+            log.info("No subtitles — generating with Whisper from cropped clip...")
             generated = generate_whisper_subtitles(cropped, TMP_DIR / f"soap_{vid}_clip{clip_index}_subs")
             if generated:
                 vtt_path = generated
                 whisper_subs = True
 
-    # Burn subtitles AFTER mute/flip so text isn't mirrored
-    if mute:
-        muted = TMP_DIR / f"{slug}_muted.mp4"
-        mute_audio(cropped, muted)
-        cropped.unlink(missing_ok=True)
-        cropped = muted
+    # Apply all transformations (mirror, zoom, saturation, speed, echo + optional mute)
+    transformed = TMP_DIR / f"{slug}_transformed.mp4"
+    transform_clip(cropped, transformed, mute=mute)
+    cropped.unlink(missing_ok=True)
+    cropped = transformed
 
-    # Now burn subtitles (text will be correct orientation)
+    # Burn subtitles AFTER transform so text stays readable (not mirrored)
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
         offset = 0.0 if whisper_subs else max(0.0, start)
