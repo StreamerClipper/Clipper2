@@ -635,7 +635,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         fetched = fetch_subtitles(url, TMP_DIR / f"soap_{vid}_subs")
         if fetched:
             fetched.rename(vtt_path)
-        elif mute:
+        else:
             log.info("No subtitles — generating with Whisper from cropped clip...")
             generated = generate_whisper_subtitles(cropped, TMP_DIR / f"soap_{vid}_clip{clip_index}_subs")
             if generated:
