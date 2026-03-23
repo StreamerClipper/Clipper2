@@ -386,7 +386,8 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
     video_filter = (
         "hflip,"
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
-        "eq=saturation=1.15:brightness=0.02,"
+        "colorchannelmixer=rr=0.43:gg=1.0:bb=0.9,"
+        "eq=saturation=1.2:contrast=1.05:brightness=-0.02,"
         "vignette=PI/4,"
         "setpts=PTS/1.2"
     )
