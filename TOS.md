@@ -2,6 +2,8 @@
 
 **Last updated: March 24, 2026**
 
+tiktok-developers-site-verification=2N2imSPfeKlgKtk1f0tg2JWoCtonYiUz
+
 ## 1. Acceptance of Terms
 By using this application ("ClipBot"), you agree to these Terms of Service. If you do not agree, do not use this application.
 
