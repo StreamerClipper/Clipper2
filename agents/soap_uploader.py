@@ -179,6 +179,7 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
 def handle_approval(record: dict) -> str | None:
     job       = record["job"]
     hotspot   = record["hotspot"]
+    token     = settings.DISCORD_BOT_TOKEN
     raw_index = record.get("clip_index", 0)
     clip_number = raw_index if raw_index >= 1 else raw_index + 1
     tmp_path = Path(f"/tmp/soap_clip_{record['message_id']}.mp4")
@@ -200,10 +201,11 @@ def handle_approval(record: dict) -> str | None:
         f"⬇️ Download the video and upload manually."
     )
     try:
+        import requests
         with open(tmp_path, "rb") as f:
             requests.post(
                 f"https://discord.com/api/v10/channels/{staging_channel_id}/messages",
-                headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"},
+                headers={"Authorization": f"Bot {token}"},
                 files={"file": (tmp_path.name, f, "video/mp4")},
                 data={"content": staging_content},
                 timeout=120,
