@@ -202,17 +202,21 @@ def handle_approval(record: dict) -> str | None:
     )
     try:
         import requests
+        log.info(f"Posting to staging channel {staging_channel_id}...")
         with open(tmp_path, "rb") as f:
-            requests.post(
+            resp = requests.post(
                 f"https://discord.com/api/v10/channels/{staging_channel_id}/messages",
                 headers={"Authorization": f"Bot {token}"},
                 files={"file": (tmp_path.name, f, "video/mp4")},
                 data={"content": staging_content},
                 timeout=120,
             )
-        log.info("Clip posted to staging channel")
+        if resp.status_code in (200, 201):
+            log.info("Clip posted to staging channel ✅")
+        else:
+            log.warning(f"Staging post failed: {resp.status_code} — {resp.text[:300]}")
     except Exception as e:
-        log.warning(f"Staging post failed: {e}")
+        log.warning(f"Staging post exception: {e}")
 
     log.info(f"Uploading: {title}")
     try:
