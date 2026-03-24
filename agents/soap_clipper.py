@@ -403,15 +403,21 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
             f"[transformed][cta]overlay=0:150:enable='between(t,0,3.5)'[outv]"
         )
         if mute:
-            cmd = [
+            # No dialogue audio — trim music to exact video duration then mux
+            probe = subprocess.run([
+                "ffprobe", "-v", "quiet", "-show_entries",
+                "format=duration", "-of", "csv=p=0", str(output_path)
+            ], capture_output=True, text=True)
+            vid_duration = float(probe.stdout.strip() or 37.5)
+            music_cmd = [
                 "ffmpeg", "-y",
-                "-i", str(input_path),
-                "-i", str(cta_path),
-                "-filter_complex", filter_complex,
-                "-map", "[outv]",
-                "-an",
-                "-c:v", "libx264", "-preset", "fast",
-                str(output_path),
+                "-i", str(output_path),
+                "-stream_loop", "-1", "-i", str(music_path),
+                "-filter_complex",
+                f"[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st={vid_duration-2}:d=2,atrim=0:{vid_duration}[outa]",
+                "-map", "0:v", "-map", "[outa]",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                str(music_out),
             ]
         else:
             cmd = [
