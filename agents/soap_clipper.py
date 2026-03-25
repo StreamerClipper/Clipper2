@@ -724,12 +724,13 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
         "type":       "soap_short",
     }
 
+    show = job['title'].split('.')[0].split(' - ')[0].strip()
     content = (
         f"📺 **[Soap Shorts]** Clip {clip_index+1}/3 ready for approval\n\n"
-        f"**Episode:** {job['title']}\n"
+        f"**Show:** {show}\n"
         f"**Timestamp:** `{ts_label(hotspot['start_sec'])}` — `{ts_label(hotspot['end_sec'])}`\n"
-        f"**Most Replayed intensity:** `{intensity_pct}%`\n\n"
-        f"React with ✅ to upload to YouTube Shorts, or ❌ to discard.\n"
+        f"**Intensity:** `{intensity_pct}%`\n\n"
+        f"React with ✅ to approve or ❌ to discard.\n"
         f"||`RECORD:{json.dumps(record, separators=(',', ':'))}`||"
     )
 
