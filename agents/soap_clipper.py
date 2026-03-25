@@ -862,7 +862,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         has_subs = shift_subtitles_to_srt(
             vtt_path, offset, srt_path,
             speed=1.2 if whisper_subs else 1.0,
-            delay=0.0 if whisper_subs else -3.0
+            delay=4.0 if whisper_subs else -1.0
         )
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
