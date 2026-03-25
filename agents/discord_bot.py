@@ -352,7 +352,7 @@ class ApprovalBot(discord.Client):
             return
 
         # clip char <url> <character>
-        if content.startswith("clip char "):
+        if content.startswith("char "):
             parts = content.split()
             if len(parts) >= 4:
                 char_url  = parts[2]
@@ -361,7 +361,7 @@ class ApprovalBot(discord.Client):
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, queue_character_clip, char_url, character)
             else:
-                await message.channel.send("Usage: `clip char <url> <character>`\nExample: `clip char https://youtube.com/... sila_turkoglu`")
+                await message.channel.send("Usage: `char <url> <character>`\nExample: `char https://youtube.com/... sila_turkoglu`")
             return
 
 
