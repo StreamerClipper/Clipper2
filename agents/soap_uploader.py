@@ -53,6 +53,7 @@ def build_title(job: dict, hotspot: dict, clip_index: int = 1, frame_path: Path 
     bolum = f"Bölüm {episode_num}" if episode_num else ""
 
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    log.info(f"build_title: api_key set={bool(api_key)}, frame_path={frame_path}, frame_exists={frame_path.exists() if frame_path else False}")
     if api_key:
         try:
             import anthropic, base64
@@ -168,14 +169,14 @@ def download_from_discord(message_id: str, dest: Path) -> bool:
 def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[str]) -> str | None:
     import os
     # Use dizikliper-specific credentials if available, otherwise fall back to default
-    client_id     = os.getenv("SOAP_YOUTUBE_CLIENT_ID")     or settings.YOUTUBE_CLIENT_ID
-    client_secret = os.getenv("SOAP_YOUTUBE_CLIENT_SECRET") or settings.YOUTUBE_CLIENT_SECRET
-    refresh_token = os.getenv("SOAP_YOUTUBE_REFRESH_TOKEN") or settings.YOUTUBE_REFRESH_TOKEN
+    client_id     = os.getenv("YOUTUBE_CLIENT_ID")     or settings.YOUTUBE_CLIENT_ID
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET") or settings.YOUTUBE_CLIENT_SECRET
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN") or settings.YOUTUBE_REFRESH_TOKEN
 
-    if os.getenv("SOAP_YOUTUBE_REFRESH_TOKEN"):
+    if os.getenv("YOUTUBE_REFRESH_TOKEN"):
         log.info("Using dizikliper channel credentials")
     else:
-        log.warning("SOAP_YOUTUBE_REFRESH_TOKEN not set — using default channel")
+        log.warning("YOUTUBE_REFRESH_TOKEN not set — using default channel")
 
     try:
         from google.oauth2.credentials import Credentials
