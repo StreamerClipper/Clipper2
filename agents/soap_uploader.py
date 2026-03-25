@@ -40,12 +40,10 @@ def _strip_episode(title: str) -> str:
     return title
 
 
-def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
-    raw     = job.get("title", "Dizi")
-    show    = _strip_episode(raw)
-    url     = job.get("url", "")
+def build_title(job: dict, hotspot: dict, clip_index: int = 1, frame_path: Path = None) -> str:
+    raw  = job.get("title", "Dizi")
+    show = _strip_episode(raw)
 
-    # Extract episode number
     episode_num = None
     m = re.search(r'(\d+)[.\s]*(?:Bölüm|Episode|Ep\.?)', raw, re.IGNORECASE)
     if not m:
@@ -54,33 +52,42 @@ def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
         episode_num = m.group(1)
     bolum = f"Bölüm {episode_num}" if episode_num else ""
 
-    # Generate context-aware Turkish title via Claude
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if api_key:
         try:
-            import anthropic
+            import anthropic, base64
             client = anthropic.Anthropic(api_key=api_key)
-            prompt = (
-                f"Türk dizisi '{show}' için kısa, duygusal ve merak uyandıran bir YouTube Shorts başlığı yaz.\n"
-                f"Format: [Karakter/Sahne Açıklaması] - {show} #{clip_index}\n"
-                f"Örnek: 'Cihan'ı Ağlatan Rüya - Uzak Şehir #2'\n"
-                f"Örnek: 'Sır Ortaya Çıkıyor - Kızılcık Şerbeti #1'\n"
-                f"Max 60 karakter. Sadece başlığı yaz, başka hiçbir şey yok."
-            )
+            content = []
+            if frame_path and frame_path.exists():
+                with open(frame_path, "rb") as f:
+                    img_data = base64.standard_b64encode(f.read()).decode("utf-8")
+                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": img_data}})
+                content.append({"type": "text", "text": (
+                    f"Bu görüntü '{show}' adlı Türk dizisinden bir sahnedir.\n"
+                    f"Bu sahneye bakarak kısa, duygusal ve merak uyandıran bir YouTube Shorts başlığı yaz.\n"
+                    f"Format: [Sahne/Karakter Açıklaması] - {show} #{clip_index}\n"
+                    f"Örnek: 'Cihan'ı Ağlatan Rüya - Uzak Şehir #2'\n"
+                    f"Max 60 karakter. Sadece başlığı yaz, başka hiçbir şey yok."
+                )})
+            else:
+                content.append({"type": "text", "text": (
+                    f"Türk dizisi '{show}' için kısa, duygusal ve merak uyandıran bir YouTube Shorts başlığı yaz.\n"
+                    f"Format: [Karakter/Sahne Açıklaması] - {show} #{clip_index}\n"
+                    f"Örnek: 'Cihan'ı Ağlatan Rüya - Uzak Şehir #2'\n"
+                    f"Max 60 karakter. Sadece başlığı yaz, başka hiçbir şey yok."
+                )})
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=60,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
             )
             generated = message.content[0].text.strip().strip('"')
-            # Ensure #Shorts is appended
             if "#Shorts" not in generated and "#shorts" not in generated:
                 generated += " #Shorts"
             return generated
         except Exception as e:
-            log.warning(f"Title generation failed: {e} — api_key set: {bool(api_key)}")
+            log.warning(f"Title generation failed: {e}")
 
-    # Fallback to original format
     return f"{show} Highlights {bolum} #{clip_index} #Shorts"
 
 
@@ -206,20 +213,40 @@ def upload_to_youtube(clip_path: Path, title: str, description: str, tags: list[
 
 
 def handle_approval(record: dict) -> str | None:
-    job       = record["job"]
-    hotspot   = record["hotspot"]
-    token     = settings.DISCORD_BOT_TOKEN
-    raw_index = record.get("clip_index", 0)
+    job         = record["job"]
+    hotspot     = record["hotspot"]
+    token       = settings.DISCORD_BOT_TOKEN
+    raw_index   = record.get("clip_index", 0)
     clip_number = raw_index if raw_index >= 1 else raw_index + 1
-    tmp_path = Path(f"/tmp/soap_clip_{record['message_id']}.mp4")
+    tmp_path    = Path(f"/tmp/soap_clip_{record['message_id']}.mp4")
+
     if not tmp_path.exists():
         log.info("Clip not on disk — downloading from Discord attachment...")
         if not download_from_discord(str(record["message_id"]), tmp_path):
             return None
 
-    title       = build_title(job, hotspot, clip_index=clip_number)
+    # Extract keyframe for Claude Vision title generation
+    import subprocess
+    frame_path = Path(f"/tmp/soap_clip_{record['message_id']}_frame.jpg")
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-ss", "5",
+            "-i", str(tmp_path),
+            "-vframes", "1", "-q:v", "3",
+            str(frame_path)
+        ], capture_output=True, timeout=10)
+        log.info(f"Keyframe extracted: {frame_path.name}")
+    except Exception as e:
+        log.warning(f"Keyframe extraction failed: {e}")
+        frame_path = None
+
+    title       = build_title(job, hotspot, clip_index=clip_number, frame_path=frame_path)
     description = build_description(job, hotspot)
     tags        = build_tags(job)
+
+    # Clean up frame
+    if frame_path and Path(frame_path).exists():
+        Path(frame_path).unlink(missing_ok=True)
 
     # Post to staging channel for Instagram/TikTok
     staging_channel_id = "1485720642660598001"
@@ -252,6 +279,7 @@ def handle_approval(record: dict) -> str | None:
         video_id = upload_to_youtube(tmp_path, title, description, tags)
     finally:
         tmp_path.unlink(missing_ok=True)
+
     if video_id:
         return f"https://youtube.com/shorts/{video_id}"
     return None
