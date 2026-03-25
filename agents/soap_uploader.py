@@ -41,17 +41,46 @@ def _strip_episode(title: str) -> str:
 
 
 def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
-    raw  = job.get("title", "Dizi")
-    show = _strip_episode(raw)
-    if len(show) > 50:
-        show = show[:47] + "..."
+    raw     = job.get("title", "Dizi")
+    show    = _strip_episode(raw)
+    url     = job.get("url", "")
+
+    # Extract episode number
     episode_num = None
-    m = re.search(r'(\d+)[.\s]*(?:B\u00f6l\u00fcm|Episode|Ep\.?)', raw, re.IGNORECASE)
+    m = re.search(r'(\d+)[.\s]*(?:Bölüm|Episode|Ep\.?)', raw, re.IGNORECASE)
     if not m:
-        m = re.search(r'(?:B\u00f6l\u00fcm|Episode|Ep\.?)[.\s]*(\d+)', raw, re.IGNORECASE)
+        m = re.search(r'(?:Bölüm|Episode|Ep\.?)[.\s]*(\d+)', raw, re.IGNORECASE)
     if m:
         episode_num = m.group(1)
-    bolum = f"B\u00f6l\u00fcm {episode_num}" if episode_num else "B\u00f6l\u00fcm"
+    bolum = f"Bölüm {episode_num}" if episode_num else ""
+
+    # Generate context-aware Turkish title via Claude
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if api_key:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            prompt = (
+                f"Türk dizisi '{show}' için kısa, duygusal ve merak uyandıran bir YouTube Shorts başlığı yaz.\n"
+                f"Format: [Karakter/Sahne Açıklaması] - {show} #{clip_index}\n"
+                f"Örnek: 'Cihan'ı Ağlatan Rüya - Uzak Şehir #2'\n"
+                f"Örnek: 'Sır Ortaya Çıkıyor - Kızılcık Şerbeti #1'\n"
+                f"Max 60 karakter. Sadece başlığı yaz, başka hiçbir şey yok."
+            )
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=60,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            generated = message.content[0].text.strip().strip('"')
+            # Ensure #Shorts is appended
+            if "#Shorts" not in generated and "#shorts" not in generated:
+                generated += " #Shorts"
+            return generated
+        except Exception as e:
+            log.warning(f"Title generation failed: {e}")
+
+    # Fallback to original format
     return f"{show} Highlights {bolum} #{clip_index} #Shorts"
 
 
