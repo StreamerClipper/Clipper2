@@ -358,11 +358,9 @@ class ApprovalBot(discord.Client):
                 char_url  = parts[2]
                 character = parts[3]
                 await message.channel.send(f"🎬 Queuing character highlight for `{character}`...")
+                from agents.soap_scout import queue_character_clip
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, queue_character_clip, char_url, character)
-            else:
-                await message.channel.send("Usage: `char <url> <character>`\nExample: `char https://youtube.com/... sila_turkoglu`")
-            return
 
 
         # !hype status — show current settings
