@@ -60,7 +60,7 @@ jobs:
             --list-formats "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1 | grep -i "node\|runtime\|challenge\|format"
 
       - name: Install Python dependencies
-        run: pip install requests python-dotenv google-api-python-client google-auth-oauthlib openai-whisper
+        run: pip install requests python-dotenv google-api-python-client google-auth-oauthlib openai-whisper opencv-python-headless numpy
 
       - name: Run soap clipper
         env:

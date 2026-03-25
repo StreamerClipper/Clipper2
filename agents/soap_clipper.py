@@ -518,24 +518,89 @@ def get_video_dimensions(path: Path) -> tuple[int, int]:
 
 
 def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
-    w, h = get_video_dimensions(input_path)
-    target_w = int(h * 9 / 16)
-    crop_x   = (w - target_w) // 2
+    """
+    Smart crop to 9:16.
+    - If any multi-person frames detected: blurred background fill
+    - If single person only: smart crop centered on face
+    """
+    import cv2
+    import numpy as np
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-vf", f"crop={target_w}:{h}:{crop_x}:0,scale={OUT_W}:{OUT_H}",
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-preset", "fast",
-        str(output_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    w, h = get_video_dimensions(input_path)
+    CROP_W, CROP_H = 608, 1080
+    PADDING = 100
+
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    )
+    cap = cv2.VideoCapture(str(input_path))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    max_span = 0
+    face_centers = []
+    multi_person_count = 0
+
+    for frame_num in range(0, total_frames, int(fps)):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
+        )
+        if len(faces) >= 2:
+            multi_person_count += 1
+        if len(faces) > 0:
+            left  = max(0, min(x for x,y,fw,fh in faces) - PADDING)
+            right = min(w, max(x+fw for x,y,fw,fh in faces) + PADDING)
+            max_span = max(max_span, right - left)
+            face_centers.append((left + right) // 2)
+
+    cap.release()
+
+    median_center = int(np.median(face_centers)) if face_centers else w // 2
+    has_multi = multi_person_count > 0
+    log.info(f"Multi-person frames: {multi_person_count} — using {'blur bg' if has_multi else 'smart crop'} mode")
+
+    if has_multi:
+        scale = min(CROP_W / max_span, 0.75) if max_span > 0 else 0.75
+        new_w = int(w * scale); new_w += new_w % 2
+        new_h = int(h * scale); new_h += new_h % 2
+        scaled_cx = int(median_center * scale)
+        crop_x = max(0, min(scaled_cx - CROP_W // 2, new_w - CROP_W))
+        log.info(f"Blur bg: scale={scale:.2f} → {new_w}x{new_h}, crop_x={crop_x}")
+        filter_complex = (
+            f"[0:v]scale={CROP_W}:{CROP_H}:force_original_aspect_ratio=increase,"
+            f"crop={CROP_W}:{CROP_H},boxblur=20:5[bg];"
+            f"[0:v]scale={new_w}:{new_h}[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-filter_complex", filter_complex,
+            "-map", "[outv]", "-map", "0:a",
+            "-c:v", "libx264", "-c:a", "aac", "-preset", "fast",
+            str(output_path),
+        ]
+    else:
+        zoom_out_w = min(int(CROP_W * 1.15), w)
+        crop_x = max(0, min(median_center - zoom_out_w // 2, w - zoom_out_w))
+        log.info(f"Smart crop: crop_x={crop_x}, zoom_out_w={zoom_out_w}")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-vf", f"crop={zoom_out_w}:{h}:{crop_x}:0,scale={CROP_W}:{CROP_H}",
+            "-c:v", "libx264", "-c:a", "aac", "-preset", "fast",
+            str(output_path),
+        ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
-        log.error(f"ffmpeg crop failed: {result.stderr[-400:]}")
+        log.error(f"Crop failed: {result.stderr[-400:]}")
         return False
-    log.info(f"Cropped to 9:16: {output_path}")
+    log.info(f"Crop done: {output_path}")
     return True
 
 
