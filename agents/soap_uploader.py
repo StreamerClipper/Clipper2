@@ -78,7 +78,7 @@ def build_title(job: dict, hotspot: dict, clip_index: int = 1) -> str:
                 generated += " #Shorts"
             return generated
         except Exception as e:
-            log.warning(f"Title generation failed: {e}")
+            log.warning(f"Title generation failed: {e} — api_key set: {bool(api_key)}")
 
     # Fallback to original format
     return f"{show} Highlights {bolum} #{clip_index} #Shorts"
