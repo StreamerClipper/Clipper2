@@ -382,7 +382,7 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
     cta_path = Path(__file__).parent.parent / "abone_ol.mp4"
     has_cta  = cta_path.exists()
 
-    audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.1,asetrate=44100*1.05,aresample=44100"
+    audio_filter = "aecho=0.8:0.88:60:0.1,asetrate=44100*1.05,aresample=44100"
     video_filter = (
         "hflip,"
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
@@ -391,7 +391,7 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
         "colorchannelmixer=rr=0.43:gg=1.0:bb=0.9,"
         "eq=saturation=1.1:contrast=1.2:brightness=0.02,"
         "vignette=PI/4,"
-        "setpts=PTS/1.2"
+        "setpts=PTS/1.0"
     )
 
     if has_cta:
@@ -861,8 +861,8 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         offset = 0.0 if whisper_subs else max(0.0, start)
         has_subs = shift_subtitles_to_srt(
             vtt_path, offset, srt_path,
-            speed=1.2 if whisper_subs else 1.0,
-            delay=4.0 if whisper_subs else -1.0
+            speed=1.0,
+            delay=0.0
         )
         if has_subs:
             subbed = TMP_DIR / f"{slug}_subbed.mp4"
