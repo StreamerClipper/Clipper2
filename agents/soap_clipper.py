@@ -367,22 +367,11 @@ def shift_subtitles_to_srt(vtt_path: Path, start_sec: float, out_srt: Path, spee
         return False
 
 
-def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> bool:
-    """
-    Apply Content ID bypass transformations + CTA overlay:
-    - Mirror horizontally
-    - Slight zoom punch
-    - Saturation + brightness shift
-    - Vignette (dark corners)
-    - 1.2x speed
-    - Subtle audio echo
-    - Abone Ol CTA overlay for first 3.5s
-    - Optionally mute audio
-    """
+def apply_visual_transforms(input_path: Path, output_path: Path, mute: bool = False) -> bool:
+    """Apply visual transforms only — NO speed change. Subs will be burned after this."""
     cta_path = Path(__file__).parent.parent / "abone_ol.mp4"
     has_cta  = cta_path.exists()
 
-    audio_filter = "aecho=0.8:0.88:60:0.1"
     video_filter = (
         "hflip,"
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
@@ -390,12 +379,11 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
         "unsharp=13:13:5.0:5:5:0.5,"
         "colorchannelmixer=rr=0.43:gg=1.0:bb=0.9,"
         "eq=saturation=1.1:contrast=1.2:brightness=0.02,"
-        "vignette=PI/4,"
-        "setpts=PTS/1.0"
+        "vignette=PI/4"
+        # NO setpts here — speed applied after subs
     )
 
     if has_cta:
-        # Add CTA overlay on top of all other transforms
         filter_complex = (
             f"[0:v]{video_filter}[transformed];"
             f"[1:v]scale=608:280,"
@@ -405,82 +393,71 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
             f"[transformed][cta]overlay=0:150:enable='between(t,0,3.5)'[outv]"
         )
         if mute:
-            # No dialogue audio — trim music to exact video duration then mux
-            probe = subprocess.run([
-                "ffprobe", "-v", "quiet", "-show_entries",
-                "format=duration", "-of", "csv=p=0", str(output_path)
-            ], capture_output=True, text=True)
-            vid_duration = float(probe.stdout.strip() or 37.5)
-            music_cmd = [
-                "ffmpeg", "-y",
-                "-i", str(output_path),
-                "-stream_loop", "-1", "-i", str(music_path),
-                "-filter_complex",
-                f"[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st={vid_duration-2}:d=2,atrim=0:{vid_duration}[outa]",
-                "-map", "0:v", "-map", "[outa]",
-                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                str(music_out),
-            ]
+            cmd = ["ffmpeg", "-y", "-i", str(input_path), "-i", str(cta_path),
+                   "-filter_complex", filter_complex, "-map", "[outv]", "-an",
+                   "-c:v", "libx264", "-preset", "fast", str(output_path)]
         else:
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", str(input_path),
-                "-i", str(cta_path),
-                "-filter_complex", filter_complex,
-                "-map", "[outv]", "-map", "0:a",
-                "-af", audio_filter,
-                "-c:v", "libx264", "-preset", "fast",
-                "-c:a", "aac", "-b:a", "128k",
-                str(output_path),
-            ]
+            cmd = ["ffmpeg", "-y", "-i", str(input_path), "-i", str(cta_path),
+                   "-filter_complex", filter_complex,
+                   "-map", "[outv]", "-map", "0:a",
+                   "-c:v", "libx264", "-preset", "fast",
+                   "-c:a", "aac", "-b:a", "128k", str(output_path)]
     else:
-        log.warning("abone_ol.mp4 not found — skipping CTA overlay")
         if mute:
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", str(input_path),
-                "-vf", video_filter,
-                "-an",
-                "-c:v", "libx264", "-preset", "fast",
-                str(output_path),
-            ]
+            cmd = ["ffmpeg", "-y", "-i", str(input_path),
+                   "-vf", video_filter, "-an",
+                   "-c:v", "libx264", "-preset", "fast", str(output_path)]
         else:
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", str(input_path),
-                "-vf", video_filter,
-                "-af", audio_filter,
-                "-c:v", "libx264", "-preset", "fast",
-                "-c:a", "aac", "-b:a", "128k",
-                str(output_path),
-            ]
+            cmd = ["ffmpeg", "-y", "-i", str(input_path),
+                   "-vf", video_filter,
+                   "-c:v", "libx264", "-preset", "fast",
+                   "-c:a", "aac", "-b:a", "128k", str(output_path)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
-        log.warning(f"Transform failed — using original: {result.stderr[-200:]}")
+        log.warning(f"Visual transform failed: {result.stderr[-200:]}")
+        shutil.copy(input_path, output_path)
+    return True
+
+def apply_speed_and_music(input_path: Path, output_path: Path, mute: bool = False) -> bool:
+    """Apply 1.2x speed + pitch shift + music mix. Called AFTER subs are burned in."""
+    music_path = Path(__file__).parent.parent / "drama_sfx.mp3"
+
+    audio_filter = "aecho=0.8:0.88:60:0.1,asetrate=44100*1.05,aresample=44100,atempo=1.0"
+
+    if mute:
+        cmd = ["ffmpeg", "-y", "-i", str(input_path),
+               "-vf", "setpts=PTS/1.2", "-an",
+               "-c:v", "libx264", "-preset", "fast", str(output_path)]
+    else:
+        cmd = ["ffmpeg", "-y", "-i", str(input_path),
+               "-vf", "setpts=PTS/1.2",
+               "-af", f"atempo=1.2,{audio_filter}",
+               "-c:v", "libx264", "-preset", "fast",
+               "-c:a", "aac", "-b:a", "128k", str(output_path)]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        log.warning(f"Speed-up failed: {result.stderr[-200:]}")
         shutil.copy(input_path, output_path)
         return True
-    # Mix in background music if available
-    music_path = Path(__file__).parent.parent / "drama_sfx.mp3"
+
+    # Mix in background music
     if music_path.exists():
         music_out = output_path.with_suffix('.music.mp4')
         if mute:
-            # No dialogue audio — music is the only track
             music_cmd = [
-                "ffmpeg", "-y",
-                "-i", str(output_path),
+                "ffmpeg", "-y", "-i", str(output_path),
                 "-stream_loop", "-1", "-i", str(music_path),
                 "-filter_complex",
                 "[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st=40:d=3[outa]",
                 "-map", "0:v", "-map", "[outa]",
-                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                "-shortest",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest",
                 str(music_out),
             ]
         else:
             music_cmd = [
-                "ffmpeg", "-y",
-                "-i", str(output_path),
+                "ffmpeg", "-y", "-i", str(output_path),
                 "-stream_loop", "-1", "-i", str(music_path),
                 "-filter_complex",
                 "[0:a]volume=1.0[dialogue];"
@@ -498,8 +475,6 @@ def transform_clip(input_path: Path, output_path: Path, mute: bool = False) -> b
         else:
             music_out.unlink(missing_ok=True)
             log.warning(f"Music mix failed: {res.stderr[-200:]}")
-    else:
-        log.warning("drama_sfx.mp3 not found — skipping background music")
 
     return True
 
@@ -835,7 +810,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
         return None
     raw.unlink(missing_ok=True)
 
-    # Generate/fetch subtitles BEFORE transform (Whisper needs audio)
+    # Fetch subtitles BEFORE any transforms (Whisper needs original audio)
     vtt_path = TMP_DIR / f"soap_{vid}_subs.vtt"
     whisper_subs = False
     if not vtt_path.exists():
@@ -849,13 +824,14 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
                 vtt_path = generated
                 whisper_subs = True
 
-    # Apply all transformations (mirror, zoom, saturation, speed, echo + optional mute)
+    # Step 1 — visual transforms only (mirror, beauty, CTA) — NO speed change yet
     transformed = TMP_DIR / f"{slug}_transformed.mp4"
-    transform_clip(cropped, transformed, mute=mute)
+    apply_visual_transforms(cropped, transformed, mute=mute)
     cropped.unlink(missing_ok=True)
     cropped = transformed
 
-    # Burn subtitles AFTER transform so text stays readable (not mirrored)
+    # Step 2 — burn subtitles BEFORE speed-up so they're baked into frames
+    # Timing is at 1.0x speed here — the speed-up carries them with the frames
     if vtt_path.exists():
         srt_path = TMP_DIR / f"{slug}_shifted.srt"
         offset = 0.0 if whisper_subs else max(0.0, start)
@@ -870,6 +846,12 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
             cropped.unlink(missing_ok=True)
             srt_path.unlink(missing_ok=True)
             cropped = subbed
+
+    # Step 3 — speed up 1.2x + audio effects + music AFTER subs are baked in
+    sped = TMP_DIR / f"{slug}_sped.mp4"
+    apply_speed_and_music(cropped, sped, mute=mute)
+    cropped.unlink(missing_ok=True)
+    cropped = sped
 
     shutil.move(str(cropped), str(final))
     log.info(f"Clip ready: {final}")
