@@ -344,6 +344,32 @@ class ApprovalBot(discord.Client):
                     "`!kick resume` — resume stream monitoring"
                 )
 
+            if content.startswith("!crop"):
+                parts = content.split()
+                if len(parts) == 2 and parts[1] in ("full_screen", "blur_bg"):
+                    mode = parts[1]
+                    # Write to .env file
+                    env_path = Path(".env")
+                    env_lines = env_path.read_text().splitlines() if env_path.exists() else []
+                    updated = False
+                    for i, line in enumerate(env_lines):
+                        if line.startswith("SMART_CROP="):
+                            env_lines[i] = f"SMART_CROP={mode}"
+                            updated = True
+                            break
+                    if not updated:
+                        env_lines.append(f"SMART_CROP={mode}")
+                    env_path.write_text("\n".join(env_lines) + "\n")
+                    os.environ["SMART_CROP"] = mode
+                    await message.channel.send(f"✅ Crop mode set to `{mode}`")
+                else:
+                    current = os.environ.get("SMART_CROP", "full_screen")
+                    await message.channel.send(
+                        f"📐 Current crop mode: `{current}`\n"
+                        f"Usage: `!crop full_screen` or `!crop blur_bg`"
+                    )
+                return
+
             return  # ignore anything else in the soap input channel
         # ── End soap commands ─────────────────────────────────────────────────
 

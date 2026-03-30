@@ -73,6 +73,7 @@ jobs:
           SOAP_YOUTUBE_CLIENT_SECRET: ${{ secrets.SOAP_YOUTUBE_CLIENT_SECRET }}
           SOAP_YOUTUBE_REFRESH_TOKEN: ${{ secrets.SOAP_YOUTUBE_REFRESH_TOKEN }}
           ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
+          SMART_CROP:                 ${{ secrets.SMART_CROP }}
         run: python -m agents.soap_clipper
 
       - name: Commit results

@@ -50,6 +50,9 @@ SOAP_CLIPS_CHANNEL_ID = "1484834736257106020"
 SOAP_LOG_CHANNEL_ID   = "1484834748181385256"
 SOAP_INPUT_CHANNEL_ID = "1484842601617293394"
 
+# Cropping
+SMART_CROP = os.environ.get("SMART_CROP", "blur_bg")  # options: blur_bg | full_screen
+
 
 # =============================================================================
 # Discord logging
@@ -495,18 +498,31 @@ def get_video_dimensions(path: Path) -> tuple[int, int]:
 
 
 def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
-    """
-    Smart crop to 9:16.
-    - If any multi-person frames detected: blurred background fill
-    - If single person only: smart crop centered on face
-    """
     import cv2
     import numpy as np
 
     w, h = get_video_dimensions(input_path)
     CROP_W, CROP_H = 608, 1080
     PADDING = 100
+    mode = os.environ.get("SMART_CROP", "blur_bg")
 
+    # Full screen mode — simple center crop, no face detection
+    if mode == "full_screen":
+        crop_x = (w - CROP_W) // 2
+        log.info(f"Full screen crop: crop_x={crop_x}")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-vf", f"crop={CROP_W}:{h}:{crop_x}:0,scale={CROP_W}:{CROP_H}",
+            "-c:v", "libx264", "-c:a", "aac", "-preset", "fast",
+            str(output_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            log.error(f"Crop failed: {result.stderr[-400:]}")
+            return False
+        return True
+
+    # blur_bg mode — face detection + blurred background
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     )
@@ -554,8 +570,7 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]"
         )
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
+            "ffmpeg", "-y", "-i", str(input_path),
             "-filter_complex", filter_complex,
             "-map", "[outv]", "-map", "0:a",
             "-c:v", "libx264", "-c:a", "aac", "-preset", "fast",
@@ -566,8 +581,7 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
         crop_x = max(0, min(median_center - zoom_out_w // 2, w - zoom_out_w))
         log.info(f"Smart crop: crop_x={crop_x}, zoom_out_w={zoom_out_w}")
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
+            "ffmpeg", "-y", "-i", str(input_path),
             "-vf", f"crop={zoom_out_w}:{h}:{crop_x}:0,scale={CROP_W}:{CROP_H}",
             "-c:v", "libx264", "-c:a", "aac", "-preset", "fast",
             str(output_path),
@@ -577,7 +591,6 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
     if result.returncode != 0:
         log.error(f"Crop failed: {result.stderr[-400:]}")
         return False
-    log.info(f"Crop done: {output_path}")
     return True
 
 
