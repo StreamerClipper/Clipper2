@@ -459,7 +459,6 @@ class ApprovalBot(discord.Client):
         # !restart — restart the discord bot process
         if content == "!restart":
             await message.channel.send("🔄 Restarting bot...")
-            import os
             os.execv(sys.executable, [sys.executable, "-m", "agents.discord_bot"])
             return
 
