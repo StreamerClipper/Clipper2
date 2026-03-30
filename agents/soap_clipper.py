@@ -33,6 +33,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
+SOAP_CLIPPED_FILE   = Path("output/soap_clipped.jsonl")
 SOAP_PENDING_FILE   = Path("output/soap_pending.jsonl")
 SOAP_PROCESSED_FILE = Path("output/soap_processed.jsonl")
 SOAP_DISCORD_FILE   = Path("output/soap_discord_pending.jsonl")
@@ -801,6 +802,57 @@ def generate_whisper_subtitles(video_path: Path, stem: Path) -> Path | None:
         log.error(f"Whisper subtitle generation failed: {e}")
         return None
 
+
+# =============================================================================
+# Logging
+# =============================================================================
+def load_clipped_log() -> dict:
+    """Returns dict of video_id -> entry for fast lookup."""
+    if not SOAP_CLIPPED_FILE.exists():
+        return {}
+    result = {}
+    for line in SOAP_CLIPPED_FILE.read_text().strip().splitlines():
+        try:
+            entry = json.loads(line)
+            result[entry["video_id"]] = entry
+        except Exception:
+            pass
+    return result
+
+def write_clipped_log(job: dict, clips_sent: int):
+    """Append to clipped log, keep last 50 entries, and commit to git."""
+    SOAP_CLIPPED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "video_id":   job["video_id"],
+        "title":      job.get("title", ""),
+        "url":        job.get("url", ""),
+        "clips_sent": clips_sent,
+        "clipped_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Load existing + append new
+    lines = []
+    if SOAP_CLIPPED_FILE.exists():
+        lines = [l for l in SOAP_CLIPPED_FILE.read_text().strip().splitlines() if l.strip()]
+    lines.append(json.dumps(entry))
+
+    # Keep last 50 only
+    if len(lines) > 50:
+        lines = lines[-50:]
+        log.info("Clipped log trimmed to 50 entries")
+
+    SOAP_CLIPPED_FILE.write_text("\n".join(lines) + "\n")
+
+    # Commit to git
+    try:
+        subprocess.run(["git", "add", str(SOAP_CLIPPED_FILE)], capture_output=True)
+        subprocess.run(["git", "commit", "-m", f"log: clipped {job['video_id']}"],
+                       capture_output=True)
+        subprocess.run(["git", "push"], capture_output=True)
+        log.info(f"Clipped log committed: {job['video_id']}")
+    except Exception as e:
+        log.warning(f"Git commit of clipped log failed: {e}")
+
+
 # =============================================================================
 # Process one hotspot
 # =============================================================================
@@ -870,7 +922,6 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
     log.info(f"Clip ready: {final}")
     return final
 
-
 # =============================================================================
 # Main
 # =============================================================================
@@ -889,6 +940,20 @@ def main():
         discord_log(f"❌ **[Soap]** Could not fetch metadata for `{url}`", channel_id=SOAP_LOG_CHANNEL_ID)
         mark_processed(job, lines)
         sys.exit(1)
+
+    # Dedup check
+    clipped_log = load_clipped_log()
+    if meta["video_id"] in clipped_log:
+        prev = clipped_log[meta["video_id"]]
+        clipped_at = prev["clipped_at"][:10]
+        discord_log(
+            f"⚠️ **[Soap]** Already clipped *{meta['title']}* on `{clipped_at}`\n"
+            f"Reply `!force {meta['video_id']}` in <#{SOAP_INPUT_CHANNEL_ID}> to clip again.",
+            channel_id=SOAP_LOG_CHANNEL_ID,
+        )
+        log.warning(f"Duplicate detected: {meta['video_id']} — waiting for !force confirmation")
+        mark_processed(job, lines)
+        sys.exit(0)
 
     if not meta["heatmap"]:
         discord_log(
@@ -930,11 +995,11 @@ def main():
             log.warning(f"Hotspot {i+1} failed — skipping")
 
     mark_processed(job, lines)
+    write_clipped_log(job, clips_sent)
     discord_log(
         f"✅ **[Soap]** Done — {clips_sent}/{len(hotspots)} clips sent for approval.",
         channel_id=SOAP_LOG_CHANNEL_ID,
     )
-
 
 if __name__ == "__main__":
     main()
