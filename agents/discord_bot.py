@@ -15,11 +15,10 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
-
 import discord
-
 from config.settings import settings
 
 logging.basicConfig(
@@ -344,7 +343,7 @@ class ApprovalBot(discord.Client):
                     "`!kick resume` — resume stream monitoring"
                 )
 
-            if content.startswith("!crop"):
+            if content.startswith("crop"):
                 parts = content.split()
                 if len(parts) == 2 and parts[1] in ("full_screen", "blur_bg"):
                     mode = parts[1]
@@ -368,6 +367,49 @@ class ApprovalBot(discord.Client):
                         f"📐 Current crop mode: `{current}`\n"
                         f"Usage: `!crop full_screen` or `!crop blur_bg`"
                     )
+                return
+
+            if content.startswith("force "):
+                video_id = content.split()[1].strip()
+                # Re-queue with force flag by writing directly to soap_pending.jsonl
+                force_job = {
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                    "title": video_id,
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "force": True,
+                }
+                pending = Path("output/soap_pending.jsonl")
+                pending.parent.mkdir(parents=True, exist_ok=True)
+                with open(pending, "a") as f:
+                    f.write(json.dumps(force_job) + "\n")
+                # Remove from clipped log
+                clipped = Path("output/soap_clipped.jsonl")
+                if clipped.exists():
+                    lines = [l for l in clipped.read_text().splitlines()
+                             if l.strip() and json.loads(l).get("video_id") != video_id]
+                    clipped.write_text("\n".join(lines) + "\n")
+                await message.channel.send(f"🔄 Force re-clip queued for `{video_id}`")
+                import subprocess
+                subprocess.Popen(
+                    [sys.executable, "-m", "agents.soap_scout", "--url",
+                     f"https://www.youtube.com/watch?v={video_id}"],
+                    cwd=Path(".").resolve(),
+                )
+                return
+
+            if content == "clipped":
+                clipped = Path("output/soap_clipped.jsonl")
+                if not clipped.exists():
+                    await message.channel.send("📋 No clips logged yet.")
+                    return
+                lines = [l for l in clipped.read_text().strip().splitlines() if l.strip()]
+                last10 = lines[-10:]
+                entries = [json.loads(l) for l in last10]
+                msg = "📋 **Last 10 clipped episodes:**\n"
+                for e in reversed(entries):
+                    date = e["clipped_at"][:10]
+                    msg += f"`{date}` — {e['title']} (`{e['video_id']}`)\n"
+                await message.channel.send(msg)
                 return
 
             return  # ignore anything else in the soap input channel
