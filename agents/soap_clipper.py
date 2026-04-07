@@ -381,7 +381,8 @@ def apply_visual_transforms(input_path: Path, output_path: Path, mute: bool = Fa
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
         "bilateral=sigmaS=7:sigmaR=0.07,"
         "unsharp=13:13:5.0:5:5:0.5,"
-        "vignette=PI/4"
+        "vignette=PI/4,"
+        "drawtext=text='DizilerDunyasi':fontcolor=white@0.3:fontsize=28:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:x=15:y=(h/2)+63:shadowcolor=black@0.2:shadowx=1:shadowy=1"
     )
 
     if has_cta:
