@@ -371,7 +371,6 @@ class ApprovalBot(discord.Client):
 
             if content.startswith("force "):
                 raw = content.split()[1].strip()
-                # Handle both video ID and full URL
                 if "watch?v=" in raw:
                     video_id = raw.split("watch?v=")[-1].split("&")[0]
                 elif "youtu.be/" in raw:
@@ -394,13 +393,12 @@ class ApprovalBot(discord.Client):
                     lines = [l for l in clipped.read_text().splitlines()
                              if l.strip() and json.loads(l).get("video_id") != video_id]
                     clipped.write_text("\n".join(lines) + "\n")
+                # Commit to trigger GitHub Actions
+                import subprocess as sp
+                sp.run(["git", "add", "output/soap_pending.jsonl", "output/soap_clipped.jsonl"], capture_output=True)
+                sp.run(["git", "commit", "-m", f"force: re-clip {video_id}"], capture_output=True)
+                sp.run(["git", "push"], capture_output=True)
                 await message.channel.send(f"🔄 Force re-clip queued for `{video_id}`")
-                import subprocess
-                subprocess.Popen(
-                    [sys.executable, "-m", "agents.soap_scout", "--url",
-                     f"https://www.youtube.com/watch?v={video_id}"],
-                    cwd=Path(".").resolve(),
-                )
                 return
 
             if content == "clipped":
