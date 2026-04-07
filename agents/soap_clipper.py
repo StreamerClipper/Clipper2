@@ -381,11 +381,7 @@ def apply_visual_transforms(input_path: Path, output_path: Path, mute: bool = Fa
         "zoompan=z=1.04:d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=608x1080,"
         "bilateral=sigmaS=7:sigmaR=0.07,"
         "unsharp=13:13:5.0:5:5:0.5,"
-        "colorchannelmixer=rr=0.43:gg=1.0:bb=0.9,"
-        "eq=saturation=2.4:contrast=1.35:brightness=0.18,"
-        "curves=r='0/0 0.5/0.75 1/1':g='0/0 0.5/0.7 1/1':b='0/0 0.5/0.58 1/1',"
         "vignette=PI/4"
-        # NO setpts here — speed applied after subs
     )
 
     if has_cta:
@@ -428,7 +424,7 @@ def apply_speed_and_music(input_path: Path, output_path: Path, mute: bool = Fals
     """Apply 1.2x speed + pitch shift + music mix. Called AFTER subs are burned in."""
     music_path = Path(__file__).parent.parent / "drama_sfx.mp3"
 
-    audio_filter = "aecho=0.8:0.88:60:0.1,asetrate=44100*1.05,aresample=44100,atempo=1.0"
+    audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.1"
 
     if mute:
         cmd = ["ffmpeg", "-y", "-i", str(input_path),
