@@ -382,7 +382,8 @@ def apply_visual_transforms(input_path: Path, output_path: Path, mute: bool = Fa
         "bilateral=sigmaS=7:sigmaR=0.07,"
         "unsharp=13:13:5.0:5:5:0.5,"
         "colorchannelmixer=rr=0.43:gg=1.0:bb=0.9,"
-        "eq=saturation=1.1:contrast=1.2:brightness=0.02,"
+        "eq=saturation=2.4:contrast=1.35:brightness=0.18,"
+        "curves=r='0/0 0.5/0.75 1/1':g='0/0 0.5/0.7 1/1':b='0/0 0.5/0.58 1/1',"
         "vignette=PI/4"
         # NO setpts here — speed applied after subs
     )
