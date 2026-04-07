@@ -370,8 +370,14 @@ class ApprovalBot(discord.Client):
                 return
 
             if content.startswith("force "):
-                video_id = content.split()[1].strip()
-                # Re-queue with force flag by writing directly to soap_pending.jsonl
+                raw = content.split()[1].strip()
+                # Handle both video ID and full URL
+                if "watch?v=" in raw:
+                    video_id = raw.split("watch?v=")[-1].split("&")[0]
+                elif "youtu.be/" in raw:
+                    video_id = raw.split("youtu.be/")[-1].split("?")[0]
+                else:
+                    video_id = raw
                 force_job = {
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                     "title": video_id,
