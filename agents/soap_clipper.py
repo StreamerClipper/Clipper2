@@ -177,7 +177,7 @@ def fetch_video_metadata(url: str) -> dict | None:
 # Step 2 — Hotspot detection
 # =============================================================================
 
-def find_hotspots(heatmap: list[dict]) -> list[dict]:
+def find_hotspots(heatmap: list[dict], top_n: int = TOP_N) -> list[dict]:
     if not heatmap:
         return []
 
@@ -187,7 +187,7 @@ def find_hotspots(heatmap: list[dict]) -> list[dict]:
     windows = []
 
     for point in ranked:
-        if len(chosen) >= TOP_N:
+        if len(chosen) >= top_n:
             break
 
         peak_sec  = (point["start"] + point["end"]) / 2
@@ -433,7 +433,7 @@ def apply_speed_and_music(input_path: Path, output_path: Path, mute: bool = Fals
     else:
         cmd = ["ffmpeg", "-y", "-i", str(input_path),
                "-vf", "setpts=PTS/1.2",
-               "-af", f"atempo=1.2,{audio_filter}",
+               "-af", audio_filter,
                "-c:v", "libx264", "-preset", "fast",
                "-c:a", "aac", "-b:a", "128k", str(output_path)]
 
@@ -495,7 +495,7 @@ def get_video_dimensions(path: Path) -> tuple[int, int]:
     return int(video["width"]), int(video["height"])
 
 
-def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
+def crop_to_vertical(input_path: Path, output_path: Path, skip_face_zoom: bool = False) -> bool:
     import cv2
     import numpy as np
 
@@ -503,6 +503,10 @@ def crop_to_vertical(input_path: Path, output_path: Path) -> bool:
     CROP_W, CROP_H = 608, 1080
     PADDING = 100
     mode = os.environ.get("SMART_CROP", "blur_bg")
+
+    if skip_face_zoom:
+        mode = "full_screen"
+        log.info("Yeraltı detected — forcing full_screen crop")
 
     # Full screen mode — simple center crop, no face detection
     if mode == "full_screen":
@@ -714,7 +718,7 @@ def send_clip_to_discord(clip_path: Path, job: dict, hotspot: dict, clip_index: 
 
     show = job['title'].split('.')[0].split(' - ')[0].strip()
     content = (
-        f"📺 **[Soap Shorts]** Clip {clip_index+1}/3 ready for approval\n\n"
+        f"📺 **[Soap Shorts]** Clip {clip_index+1} ready for approval\n\n"
         f"**Show:** {show}\n"
         f"**Timestamp:** `{ts_label(hotspot['start_sec'])}` — `{ts_label(hotspot['end_sec'])}`\n"
         f"**Intensity:** `{intensity_pct}%`\n\n"
@@ -854,7 +858,7 @@ def write_clipped_log(job: dict, clips_sent: int):
 # Process one hotspot
 # =============================================================================
 
-def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
+def process_hotspot(job: dict, hotspot: dict, clip_index: int, skip_face_zoom: bool = False) -> Path | None:
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     CLIPS_DIR.mkdir(parents=True, exist_ok=True)
     vid   = job["video_id"]
@@ -868,7 +872,7 @@ def process_hotspot(job: dict, hotspot: dict, clip_index: int) -> Path | None:
 
     if not download_segment(url, start, CLIP_DURATION, raw):
         return None
-    if not crop_to_vertical(raw, cropped):
+    if not crop_to_vertical(raw, cropped, skip_face_zoom=skip_face_zoom):
         return None
     raw.unlink(missing_ok=True)
 
@@ -940,7 +944,7 @@ def main():
 
     # Dedup check
     clipped_log = load_clipped_log()
-    if meta["video_id"] in clipped_log:
+    if meta["video_id"] in clipped_log and not job.get("force"):
         prev = clipped_log[meta["video_id"]]
         clipped_at = prev["clipped_at"][:10]
         discord_log(
@@ -961,7 +965,11 @@ def main():
         mark_processed(job, lines)
         sys.exit(0)
 
-    hotspots = find_hotspots(meta["heatmap"])
+    is_yeraltı = "yeraltı" in meta.get("title", "").lower() or "yeralti" in meta.get("title", "").lower()
+    top_n = 4 if is_yeraltı else TOP_N
+    log.info(f"Show detected: {'Yeraltı' if is_yeraltı else 'default'} — top_n={top_n}")
+    hotspots = find_hotspots(meta["heatmap"], top_n=top_n)
+
     if not hotspots:
         discord_log(f"⚠️ **[Soap]** No usable hotspots in *{meta['title']}*", channel_id=SOAP_LOG_CHANNEL_ID)
         mark_processed(job, lines)
@@ -983,7 +991,7 @@ def main():
     clips_sent = 0
     for i, hotspot in enumerate(hotspots):
         log.info(f"--- Hotspot {i+1}/{len(hotspots)} @ {ts_label(hotspot['start_sec'])} ---")
-        clip_path = process_hotspot(job, hotspot, i)
+        clip_path = process_hotspot(job, hotspot, i, skip_face_zoom=is_yeraltı)
         if clip_path:
             msg_id = send_clip_to_discord(clip_path, job, hotspot, i)
             if msg_id:
