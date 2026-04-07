@@ -422,8 +422,6 @@ def apply_visual_transforms(input_path: Path, output_path: Path, mute: bool = Fa
 
 def apply_speed_and_music(input_path: Path, output_path: Path, mute: bool = False) -> bool:
     """Apply 1.2x speed + pitch shift + music mix. Called AFTER subs are burned in."""
-    music_path = Path(__file__).parent.parent / "drama_sfx.mp3"
-
     audio_filter = "atempo=1.2,aecho=0.8:0.88:60:0.1"
 
     if mute:
@@ -442,41 +440,6 @@ def apply_speed_and_music(input_path: Path, output_path: Path, mute: bool = Fals
         log.warning(f"Speed-up failed: {result.stderr[-200:]}")
         shutil.copy(input_path, output_path)
         return True
-
-    # Mix in background music
-    if music_path.exists():
-        music_out = output_path.with_suffix('.music.mp4')
-        if mute:
-            music_cmd = [
-                "ffmpeg", "-y", "-i", str(output_path),
-                "-stream_loop", "-1", "-i", str(music_path),
-                "-filter_complex",
-                "[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st=40:d=3[outa]",
-                "-map", "0:v", "-map", "[outa]",
-                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest",
-                str(music_out),
-            ]
-        else:
-            music_cmd = [
-                "ffmpeg", "-y", "-i", str(output_path),
-                "-stream_loop", "-1", "-i", str(music_path),
-                "-filter_complex",
-                "[0:a]volume=1.0[dialogue];"
-                "[1:a]volume=0.35,afade=t=in:st=0:d=2,afade=t=out:st=40:d=3[music];"
-                "[dialogue][music]amix=inputs=2:duration=first[outa]",
-                "-map", "0:v", "-map", "[outa]",
-                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                str(music_out),
-            ]
-        res = subprocess.run(music_cmd, capture_output=True, text=True, timeout=120)
-        if res.returncode == 0:
-            output_path.unlink(missing_ok=True)
-            music_out.rename(output_path)
-            log.info("Background music mixed in")
-        else:
-            music_out.unlink(missing_ok=True)
-            log.warning(f"Music mix failed: {res.stderr[-200:]}")
-
     return True
 
 # =============================================================================
@@ -965,9 +928,10 @@ def main():
         mark_processed(job, lines)
         sys.exit(0)
 
-    is_yeraltı = "yeraltı" in meta.get("title", "").lower() or "yeralti" in meta.get("title", "").lower()
+    title_lower = meta.get("title", "").lower()
+    is_yeraltı = any(x in title_lower for x in ("yeraltı", "yeralti", "yeralt\u0131"))
     top_n = 4 if is_yeraltı else TOP_N
-    log.info(f"Show detected: {'Yeraltı' if is_yeraltı else 'default'} — top_n={top_n}")
+    log.info(f"Title: {meta.get('title')} — Yeraltı={is_yeraltı}, top_n={top_n}")
     hotspots = find_hotspots(meta["heatmap"], top_n=top_n)
 
     if not hotspots:
