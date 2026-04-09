@@ -40,7 +40,7 @@ SOAP_DISCORD_FILE   = Path("output/soap_discord_pending.jsonl")
 CLIPS_DIR           = Path("output/clips")
 TMP_DIR             = Path("/tmp/soap_clipper")
 
-CLIP_DURATION = 45
+CLIP_DURATION = 60
 TOP_N         = 3
 OUT_W, OUT_H  = 608, 1080
 
